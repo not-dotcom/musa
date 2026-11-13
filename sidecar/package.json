@@ -1,0 +1,15 @@
+{
+  "name": "musa-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Sidecar Electron/MusicKit de Musa: carga music.apple.com y decodifica audio con Widevine",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --musa-stdio",
+    "test": "node --test *.test.js"
+  },
+  "devDependencies": {
+    "electron": "https://github.com/castlabs/electron-releases#wvcus"
+  }
+}

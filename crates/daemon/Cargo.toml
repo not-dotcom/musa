@@ -1,0 +1,21 @@
+[package]
+name = "musa-daemon"
+description = "Daemon de Musa para Apple Music"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "musa_daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "musad"
+path = "src/main.rs"
+
+[dependencies]
+musa-protocol = { path = "../protocol" }
+anyhow.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true

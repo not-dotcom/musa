@@ -1,0 +1,15 @@
+/target
+/.deps
+/sidecar/node_modules
+/sidecar/electron
+/docs/mediciones/*.log
+*.log
+*.tmp
+.idea
+.vscode
+
+# Artefactos de la skill de diseño
+.impeccable/
+
+# Documentos internos de diseño (no se publican)
+docs/*.md

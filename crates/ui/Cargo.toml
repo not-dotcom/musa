@@ -1,0 +1,19 @@
+[package]
+name = "musa-ui"
+description = "Interfaz nativa de Musa (GTK4 + libadwaita + relm4)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "musa"
+path = "src/main.rs"
+
+[dependencies]
+musa-protocol = { path = "../protocol" }
+anyhow.workspace = true
+gdk-pixbuf.workspace = true
+image.workspace = true
+relm4 = { version = "0.11", features = ["libadwaita", "gnome_49"] }
+serde.workspace = true
+serde_json.workspace = true
