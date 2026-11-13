@@ -52,10 +52,23 @@ Salida: `{"v":1,"id":1,"ok":true,"data":{...}}` o
 `{"v":1,"id":1,"ok":false,"error":{"code":"...","message":"..."}}`.
 Eventos: `engine.ready`, `engine.error`, `engine.idle`, `engine.stopped`.
 
-Comandos: `hello`, `show-login-window`, `session`, `library`, `lyrics`,
+Comandos: `hello`, `show-login-window`, `session`, `library`, `search`,
+`catalog-album`, `catalog-artist`, `follow-artist`, `add-album`, `lyrics`,
 `set-queue` (`song_ids`, `index`, `play`), `play`, `pause`, `next`, `prev`,
 `seek` (`position_ms`), `shuffle`, `repeat`, `volume` (0-100), `state`,
 `shutdown`.
+
+`set-queue` es tolerante a canciones retiradas: si MusicKit responde
+`NOT_FOUND` porque algún id de catálogo ya no existe, el sidecar quita esas
+pistas y reintenta con el resto, en vez de dejar toda la lista sin reproducir.
+
+`follow-artist` intenta añadir un artista de catálogo a la biblioteca de Apple
+Music con `POST /me/favorites?ids[artists]=…` y, si falla, con
+`POST /me/library?ids[artists]=…`. Es best-effort: el daemon guarda el artista
+en local aunque Apple lo ignore.
+
+`add-album` añade un disco con `POST /me/library?ids[albums]=…`. También es
+best-effort y el daemon conserva el álbum y sus canciones en local.
 
 `library` lee la biblioteca con los tokens que ya usa la página de Apple Music
 (developer token + Music User Token) y devuelve el snapshot del protocolo Musa.

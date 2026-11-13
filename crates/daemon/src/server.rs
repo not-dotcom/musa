@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use musa_protocol::{
-    Album, AlbumDetail, Artist, ArtistDetail, CatalogResults, Event, Favorites, Hello, Lyrics,
-    PlayerState, Playlist, ProtocolError, RepeatMode, Request, Response, SearchResults, Song, cmd,
-    encode_line, event, parse_request, to_json,
+    Album, AlbumChange, AlbumDetail, Artist, ArtistChange, ArtistDetail, CatalogResults, Event,
+    Favorites, Hello, Lyrics, PlayerState, Playlist, ProtocolError, RepeatMode, Request, Response,
+    SearchResults, Song, cmd, encode_line, event, parse_request, to_json,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -82,6 +82,8 @@ struct Shared {
     catalog_covers: Mutex<HashMap<String, String>>,
     covers_dir: PathBuf,
     favorites_path: PathBuf,
+    followed_path: PathBuf,
+    added_albums_path: PathBuf,
     player_path: PathBuf,
     socket_path: PathBuf,
     started: Instant,
@@ -123,6 +125,27 @@ impl Shared {
         }
         if let Ok(bytes) = serde_json::to_vec_pretty(favorites) {
             let _ = std::fs::write(&self.favorites_path, bytes);
+        }
+    }
+
+    fn save_followed(&self, artists: &[Artist]) {
+        if let Some(parent) = self.followed_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(artists) {
+            let _ = std::fs::write(&self.followed_path, bytes);
+        }
+    }
+
+    fn save_added_album(&self, detail: &AlbumDetail) {
+        let mut albums = load_added_albums(&self.added_albums_path);
+        albums.retain(|album| album.album.id != detail.album.id);
+        albums.push(detail.clone());
+        if let Some(parent) = self.added_albums_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(&albums) {
+            let _ = std::fs::write(&self.added_albums_path, bytes);
         }
     }
 
@@ -236,6 +259,8 @@ pub struct ServerConfig {
     pub socket_path: PathBuf,
     pub covers_dir: PathBuf,
     pub favorites_path: PathBuf,
+    pub followed_path: PathBuf,
+    pub added_albums_path: PathBuf,
     pub player_path: PathBuf,
     pub name: String,
     pub version: String,
@@ -276,6 +301,8 @@ pub fn run(
         catalog_covers: Mutex::new(HashMap::new()),
         covers_dir: config.covers_dir,
         favorites_path: config.favorites_path,
+        followed_path: config.followed_path,
+        added_albums_path: config.added_albums_path,
         player_path: config.player_path,
         socket_path: config.socket_path.clone(),
         started: Instant::now(),
@@ -587,7 +614,11 @@ fn handle_request(state: &Arc<Shared>, name: &str, version: &str, req: Request) 
 /// Comandos que hablan con Apple por el sidecar y por eso se atienden fuera del
 /// hilo de lectura de la conexión.
 fn is_catalog_command(name: &str) -> bool {
-    name == cmd::SEARCH_CATALOG || name == cmd::CATALOG_ALBUM || name == cmd::CATALOG_ARTIST
+    name == cmd::SEARCH_CATALOG
+        || name == cmd::CATALOG_ALBUM
+        || name == cmd::CATALOG_ARTIST
+        || name == cmd::LIBRARY_ADD_ARTIST
+        || name == cmd::LIBRARY_ADD_ALBUM
 }
 
 /// Llama al sidecar para una operación de catálogo y normaliza el error.
@@ -795,6 +826,8 @@ fn dispatch(
                     "portadas".into(),
                     "cola".into(),
                     "reproduccion-real".into(),
+                    "artistas-seguidos".into(),
+                    "albumes-biblioteca".into(),
                 ],
             }))
         }
@@ -1058,6 +1091,152 @@ fn dispatch(
                 .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
             remember_song_covers(state, &detail.songs);
             Ok(to_json(&detail))
+        }
+        cmd::LIBRARY_ADD_ARTIST => {
+            let params: IdParams = musa_protocol::params(req)?;
+            {
+                // Idempotente: si ya está seguido no hace falta hablar con Apple.
+                let library = state.library.read().unwrap();
+                if let Some(artist) = library
+                    .artists_by_id
+                    .get(&params.id)
+                    .filter(|artist| artist.followed)
+                    .cloned()
+                {
+                    return Ok(to_json(&ArtistChange {
+                        artist,
+                        synced: false,
+                        sync_error: None,
+                        removed: false,
+                    }));
+                }
+            }
+            let value = catalog_call(
+                state,
+                "catalog-artist",
+                json!({"id": params.id}),
+                Duration::from_secs(25),
+                "catalog_artist",
+            )
+            .map_err(|error| {
+                if error.code == "catalog_artist" {
+                    ProtocolError::new(
+                        "artist_not_found",
+                        "Apple Music no tiene una ficha para este artista.",
+                    )
+                } else {
+                    error
+                }
+            })?;
+            let detail: ArtistDetail = serde_json::from_value(value)
+                .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
+            let ArtistDetail {
+                artist: catalog_artist,
+                ..
+            } = detail;
+            // Best-effort: Apple puede ignorar o rechazar artistas sueltos. El
+            // artista queda en Musa pase lo que pase.
+            let sync = catalog_call(
+                state,
+                "follow-artist",
+                json!({"id": params.id}),
+                Duration::from_secs(15),
+                "artist_sync",
+            );
+            let synced = sync.is_ok();
+            let sync_error = sync.err().map(|error| error.message);
+            let mut library = state.library.write().unwrap();
+            let artist = library.follow_artist(catalog_artist);
+            let followed = library.followed_artists();
+            drop(library);
+            state.save_followed(&followed);
+            state.broadcast(
+                event::ARTIST_CHANGED,
+                json!({"artist": &artist, "followed": true, "removed": false}),
+            );
+            Ok(to_json(&ArtistChange {
+                artist,
+                synced,
+                sync_error,
+                removed: false,
+            }))
+        }
+        cmd::LIBRARY_REMOVE_ARTIST => {
+            let params: IdParams = musa_protocol::params(req)?;
+            let mut library = state.library.write().unwrap();
+            let Some((artist, removed)) = library.unfollow_artist(&params.id) else {
+                return Err(ProtocolError::new("not_found", "artista inexistente"));
+            };
+            let followed = library.followed_artists();
+            drop(library);
+            state.save_followed(&followed);
+            state.broadcast(
+                event::ARTIST_CHANGED,
+                json!({"artist": &artist, "followed": false, "removed": removed}),
+            );
+            Ok(to_json(&ArtistChange {
+                artist,
+                synced: false,
+                sync_error: None,
+                removed,
+            }))
+        }
+        cmd::LIBRARY_ADD_ALBUM => {
+            let params: IdParams = musa_protocol::params(req)?;
+            {
+                let library = state.library.read().unwrap();
+                if let Some(album) = library.albums_by_id.get(&params.id).cloned() {
+                    let songs = library.songs_of_album(&album.id);
+                    return Ok(to_json(&AlbumChange {
+                        album,
+                        songs,
+                        synced: false,
+                        sync_error: None,
+                    }));
+                }
+            }
+            let value = catalog_call(
+                state,
+                "catalog-album",
+                json!({"id": params.id}),
+                Duration::from_secs(25),
+                "catalog_album",
+            )
+            .map_err(|error| {
+                if error.code == "catalog_album" {
+                    ProtocolError::new("album_not_found", "Apple Music no tiene este álbum.")
+                } else {
+                    error
+                }
+            })?;
+            let detail: AlbumDetail = serde_json::from_value(value)
+                .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
+            // Best-effort: el álbum queda en Musa aunque Apple ignore la
+            // operación o tarde en reflejarla.
+            let sync = catalog_call(
+                state,
+                "add-album",
+                json!({"id": params.id}),
+                Duration::from_secs(20),
+                "album_sync",
+            );
+            let synced = sync.is_ok();
+            let sync_error = sync.err().map(|error| error.message);
+            let mut library = state.library.write().unwrap();
+            let album = library.add_album(detail.album.clone(), detail.songs.clone());
+            let songs = library.songs_of_album(&album.id);
+            drop(library);
+            state.save_added_album(&detail);
+            state.broadcast(
+                event::ALBUM_CHANGED,
+                json!({"album": &album, "synced": synced}),
+            );
+            Ok(to_json(&AlbumChange {
+                album,
+                songs,
+                synced,
+                sync_error,
+            }))
         }
         cmd::LYRICS_GET => {
             let params: IdParams = musa_protocol::params(req)?;
@@ -1345,4 +1524,18 @@ pub fn load_persisted_player(path: &Path) -> Option<PersistedPlayer> {
 pub fn load_favorites(path: &Path) -> Option<Favorites> {
     let bytes = std::fs::read(path).ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+pub fn load_followed_artists(path: &Path) -> Vec<Artist> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Vec::new();
+    };
+    serde_json::from_slice(&bytes).unwrap_or_default()
+}
+
+pub fn load_added_albums(path: &Path) -> Vec<AlbumDetail> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Vec::new();
+    };
+    serde_json::from_slice(&bytes).unwrap_or_default()
 }

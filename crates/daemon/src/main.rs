@@ -52,6 +52,8 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&config_dir)?;
     let covers_dir = cache_dir.join("covers");
     let favorites_path = config_dir.join("favorites.json");
+    let followed_path = config_dir.join("artists.json");
+    let added_albums_path = config_dir.join("albums.json");
     let player_path = cache_dir.join("player.json");
     let socket_path = socket.unwrap_or_else(|| cache_dir.join("musad.sock"));
 
@@ -59,6 +61,12 @@ fn main() -> anyhow::Result<()> {
     let sidecar = Sidecar::start()?;
     let snapshot = sidecar.library(false)?;
     let mut library = Library::from_snapshot(snapshot);
+    // Los artistas seguidos viven en Musa aunque no tengan canciones propias
+    // en la biblioteca de Apple.
+    library.merge_followed(server::load_followed_artists(&followed_path));
+    // Los álbumes añadidos desde Musa también sobreviven a los refrescos (y a
+    // la caché de Apple, que tarda en incluirlos).
+    library.merge_added_albums(server::load_added_albums(&added_albums_path));
     // Los favoritos son locales: se guardan en favorites.json y se reaplican
     // sobre la biblioteca de Apple al arrancar.
     if let Some(favs) = server::load_favorites(&favorites_path) {
@@ -99,6 +107,8 @@ fn main() -> anyhow::Result<()> {
         socket_path,
         covers_dir,
         favorites_path,
+        followed_path,
+        added_albums_path,
         player_path,
         name: "Musa (Apple Music)".into(),
         version: env!("CARGO_PKG_VERSION").into(),

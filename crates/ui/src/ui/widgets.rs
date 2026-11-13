@@ -118,7 +118,11 @@ pub fn cover_picture_at(actions: &Actions, path: &str, logical: i32, decode: i32
     let picture = gtk::Picture::new();
     picture.set_size_request(logical, logical);
     picture.set_content_fit(gtk::ContentFit::Cover);
-    picture.set_can_shrink(false);
+    // `can_shrink` afecta solo a la medición: sin él, el mínimo del widget es
+    // el tamaño intrínseco de la textura decodificada. Las tarjetas lo heredan
+    // y la rejilla pide un ancho mínimo enorme, lo que empuja a la ventana a
+    // ensancharse cuando aparece la barra lateral.
+    picture.set_can_shrink(true);
     picture.set_hexpand(false);
     picture.set_vexpand(false);
     picture.set_valign(gtk::Align::Start);
@@ -444,7 +448,11 @@ fn apply_grid_columns(
             fallback_width
         };
         let cols = grid_columns(kind, width);
-        view.set_min_columns(cols);
+        // GtkGridView elige cuántas columnas caben entre el mínimo y el
+        // máximo. El mínimo se deja bajo (2) a propósito: si se fijara al
+        // número calculado, el ancho mínimo de la rejilla subiría con la
+        // ventana y el toplevel no podría encogerse.
+        view.set_min_columns(2);
         view.set_max_columns(cols);
     });
     sync(fallback_width + 60);

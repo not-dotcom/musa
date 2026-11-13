@@ -285,7 +285,7 @@ pub fn artists_page(actions: &Actions) -> gtk::Widget {
     let header = page_header(
         "Artistas",
         &format!(
-            "{} con álbumes en tu biblioteca",
+            "{} en tu biblioteca",
             plural(artists.len(), "artista", "artistas")
         ),
     );

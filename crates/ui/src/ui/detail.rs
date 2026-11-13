@@ -76,6 +76,12 @@ impl Actions {
             self.open_catalog_artist(id);
             return;
         };
+        // Un artista seguido no tiene canciones ni álbumes propios en la
+        // biblioteca: su ficha se completa con el catálogo.
+        if artist.followed && albums.is_empty() && songs.is_empty() {
+            self.open_catalog_artist(&artist.id);
+            return;
+        }
         *self.pending_detail.borrow_mut() = None;
         let page = artist_detail(self, &artist, &albums, &songs);
         self.open_detail(&page, &artist.name);
@@ -202,8 +208,142 @@ fn favorite_button(actions: &Actions, kind: &str, id: &str, favorite: bool) -> g
     button
 }
 
+fn follow_button(
+    actions: &Actions,
+    artist_id: &str,
+    followed: bool,
+    add_label: &str,
+) -> gtk::Button {
+    let button = icon_pill_button("", "list-add-symbolic");
+    set_follow_button(&button, followed, add_label);
+    let actions = actions.clone();
+    let id = artist_id.to_string();
+    let add_label = add_label.to_string();
+    button.connect_clicked(move |button| {
+        let now = !button.has_css_class("following");
+        button.set_sensitive(false);
+        let button = button.clone();
+        let actions_cb = actions.clone();
+        let id_cb = id.clone();
+        let add_label = add_label.clone();
+        actions.set_artist_followed(&id, now, move |ok| {
+            button.set_sensitive(true);
+            if ok {
+                let actual = actions_cb
+                    .data
+                    .borrow()
+                    .artist(&id_cb)
+                    .is_some_and(|artist| artist.followed);
+                set_follow_button(&button, actual, &add_label);
+            }
+        });
+    });
+    button
+}
+
+fn set_follow_button(button: &gtk::Button, followed: bool, add_label: &str) {
+    if followed {
+        button.add_css_class("following");
+    } else {
+        button.remove_css_class("following");
+    }
+    let (label, icon) = if followed {
+        ("Siguiendo", "emblem-ok-symbolic")
+    } else {
+        (add_label, "list-add-symbolic")
+    };
+    button.set_tooltip_text(Some(if followed {
+        "Quitar de tu biblioteca"
+    } else {
+        "Añadir a tu biblioteca"
+    }));
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 7);
+    let image = gtk::Image::from_icon_name(icon);
+    image.set_pixel_size(16);
+    let text = gtk::Label::new(Some(label));
+    content.append(&image);
+    content.append(&text);
+    button.set_child(Some(&content));
+}
+
+/// Apple usa entradas genéricas para recopilatorios que no son artistas
+/// seguibles (su ficha de catálogo devuelve 404). No ofrecemos seguirlas.
+fn is_placeholder_artist(name: &str) -> bool {
+    matches!(
+        name.trim().to_lowercase().as_str(),
+        "varios artistas"
+            | "various artists"
+            | "artista desconocido"
+            | "unknown artist"
+            | "vv. aa."
+            | "vvaa"
+    )
+}
+
+fn add_album_button(actions: &Actions, album_id: &str) -> gtk::Button {
+    let button = icon_pill_button("Añadir a la biblioteca", "list-add-symbolic");
+    let actions = actions.clone();
+    let id = album_id.to_string();
+    button.connect_clicked(move |button| {
+        button.set_sensitive(false);
+        let button = button.clone();
+        actions.add_album(&id, move |ok| {
+            if ok {
+                set_album_added(&button);
+            } else {
+                button.set_sensitive(true);
+            }
+        });
+    });
+    button
+}
+
+fn set_album_added(button: &gtk::Button) {
+    button.set_sensitive(false);
+    button.set_tooltip_text(Some("En tu biblioteca"));
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 7);
+    let image = gtk::Image::from_icon_name("emblem-ok-symbolic");
+    image.set_pixel_size(16);
+    let text = gtk::Label::new(Some("En tu biblioteca"));
+    content.append(&image);
+    content.append(&text);
+    button.set_child(Some(&content));
+}
+
 fn album_detail(actions: &Actions, album: &Album, songs: &[Song]) -> gtk::Widget {
-    let is_local = actions.data.borrow().album(&album.id).is_some();
+    let local_album = {
+        let data = actions.data.borrow();
+        data.album(&album.id).cloned().or_else(|| {
+            data.album_by_title_artist(&album.title, &album.artist_name)
+                .cloned()
+        })
+    };
+    let is_local = local_album.is_some();
+    let favorite_album_id = local_album
+        .as_ref()
+        .map(|local| local.id.clone())
+        .unwrap_or_else(|| album.id.clone());
+    let favorite = local_album.as_ref().is_some_and(|local| local.favorite);
+    let songs_in_library = songs
+        .first()
+        .is_some_and(|song| actions.data.borrow().song(&song.id).is_some());
+    let album_artist = {
+        let data = actions.data.borrow();
+        data.artist(&album.artist_id)
+            .cloned()
+            .or_else(|| data.artist_by_name(&album.artist_name).cloned())
+    };
+    let artist_followed = album_artist.as_ref().is_some_and(|artist| artist.followed);
+    let follow_artist_id = album_artist
+        .as_ref()
+        .filter(|artist| artist.followed)
+        .map(|artist| artist.id.clone())
+        .unwrap_or_else(|| album.artist_id.clone());
+    // Solo se puede seguir un artista de catálogo. Los ids sintéticos
+    // (`artist-…`) son de la biblioteca y no existen en el catálogo de Apple.
+    let can_follow_artist = !is_placeholder_artist(&album.artist_name)
+        && !follow_artist_id.is_empty()
+        && (artist_followed || (!is_local && !follow_artist_id.starts_with("artist-")));
     let total: u64 = songs.iter().map(|s| s.duration_ms).sum();
 
     let layout = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -266,8 +406,18 @@ fn album_detail(actions: &Actions, album: &Album, songs: &[Song]) -> gtk::Widget
         buttons.append(&favorite_button(
             actions,
             "album",
-            &album.id,
-            album.favorite,
+            &favorite_album_id,
+            favorite,
+        ));
+    } else {
+        buttons.append(&add_album_button(actions, &album.id));
+    }
+    if can_follow_artist {
+        buttons.append(&follow_button(
+            actions,
+            &follow_artist_id,
+            artist_followed,
+            "Seguir artista",
         ));
     }
     info.append(&eyebrow);
@@ -283,7 +433,7 @@ fn album_detail(actions: &Actions, album: &Album, songs: &[Song]) -> gtk::Widget
     separator.set_margin_start(26);
     separator.set_margin_end(26);
     body.append(&separator);
-    body.append(&song_rows(actions, songs, false, false, is_local));
+    body.append(&song_rows(actions, songs, false, false, songs_in_library));
     layout.append(&page_scroll(&body));
     layout.upcast()
 }
@@ -380,7 +530,22 @@ fn artist_detail(
     albums: &[Album],
     songs: &[Song],
 ) -> gtk::Widget {
-    let is_local = actions.data.borrow().artist(&artist.id).is_some();
+    let local_artist = {
+        let data = actions.data.borrow();
+        data.artist(&artist.id)
+            .cloned()
+            .or_else(|| data.artist_by_name(&artist.name).cloned())
+    };
+    let is_local = local_artist.is_some();
+    let is_followed = local_artist.as_ref().is_some_and(|local| local.followed);
+    let favorite_id = local_artist
+        .as_ref()
+        .map(|local| local.id.clone())
+        .unwrap_or_else(|| artist.id.clone());
+    let favorite = local_artist.as_ref().is_some_and(|local| local.favorite);
+    let songs_in_library = songs
+        .first()
+        .is_some_and(|song| actions.data.borrow().song(&song.id).is_some());
     let layout = gtk::Box::new(gtk::Orientation::Vertical, 0);
     layout.append(&detail_top(actions));
 
@@ -429,13 +594,17 @@ fn artist_detail(
         play.connect_clicked(move |_| actions_play.play_songs(&songs_play, 0));
         buttons.append(&play);
     }
-    // Los favoritos solo existen para la biblioteca local, no para el catálogo.
+    // Los artistas de la biblioteca se pueden favoritear; los de catálogo se
+    // pueden añadir (o dejar de seguir si ya se añadieron).
     if is_local {
-        buttons.append(&favorite_button(
+        buttons.append(&favorite_button(actions, "artist", &favorite_id, favorite));
+    }
+    if !is_placeholder_artist(&artist.name) && (!is_local || is_followed) {
+        buttons.append(&follow_button(
             actions,
-            "artist",
             &artist.id,
-            artist.favorite,
+            is_followed,
+            "Añadir a la biblioteca",
         ));
     }
     info.append(&eyebrow);
@@ -475,7 +644,7 @@ fn artist_detail(
         songs_title.set_margin_start(30);
         songs_title.set_margin_top(6);
         body.append(&songs_title);
-        body.append(&song_rows(actions, songs, true, false, is_local));
+        body.append(&song_rows(actions, songs, true, false, songs_in_library));
     }
     layout.append(&page_scroll(&body));
     layout.upcast()

@@ -137,6 +137,12 @@ pub mod cmd {
     pub const PLAYLIST_GET: &str = "playlist.get";
     pub const FAVORITES_LIST: &str = "favorites.list";
     pub const FAVORITE_SET: &str = "favorite.set";
+    /// Añade a la biblioteca de Musa un artista de catálogo: `{id}`.
+    pub const LIBRARY_ADD_ARTIST: &str = "library.add_artist";
+    /// Quita de la biblioteca de Musa un artista seguido: `{id}`.
+    pub const LIBRARY_REMOVE_ARTIST: &str = "library.remove_artist";
+    /// Añade a la biblioteca un álbum de catálogo con sus canciones: `{id}`.
+    pub const LIBRARY_ADD_ALBUM: &str = "library.add_album";
     pub const HOME_GET: &str = "home.get";
     pub const SEARCH: &str = "search";
     /// Busca canciones, álbumes y artistas en el catálogo de Apple Music.
@@ -167,6 +173,10 @@ pub mod cmd {
 pub mod event {
     pub const PLAYER_CHANGED: &str = "player.changed";
     pub const LIBRARY_CHANGED: &str = "library.changed";
+    /// Un artista se ha añadido o quitado de la biblioteca.
+    pub const ARTIST_CHANGED: &str = "library.artist_changed";
+    /// Un álbum se ha añadido a la biblioteca.
+    pub const ALBUM_CHANGED: &str = "library.album_changed";
     pub const ENGINE_CHANGED: &str = "engine.changed";
 }
 
@@ -184,6 +194,10 @@ pub struct Artist {
     pub album_count: u32,
     pub song_count: u32,
     pub favorite: bool,
+    /// `true` cuando el artista se ha añadido explícitamente a la biblioteca
+    /// de Musa sin tener canciones propias en ella.
+    #[serde(default)]
+    pub followed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -355,6 +369,34 @@ pub struct ArtistDetail {
     pub songs: Vec<Song>,
 }
 
+/// Resultado de añadir o quitar un artista de la biblioteca.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ArtistChange {
+    pub artist: Artist,
+    /// Si Apple Music confirmó la operación. El guardado local es independiente.
+    #[serde(default)]
+    pub synced: bool,
+    /// Detalle del fallo de sincronización, si lo hubo.
+    #[serde(default)]
+    pub sync_error: Option<String>,
+    /// `true` cuando el artista se ha eliminado por completo de la biblioteca.
+    #[serde(default)]
+    pub removed: bool,
+}
+
+/// Resultado de añadir un álbum de catálogo a la biblioteca.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlbumChange {
+    pub album: Album,
+    pub songs: Vec<Song>,
+    /// Si Apple Music confirmó la operación. El guardado local es independiente.
+    #[serde(default)]
+    pub synced: bool,
+    /// Detalle del fallo de sincronización, si lo hubo.
+    #[serde(default)]
+    pub sync_error: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RepeatMode {
@@ -503,5 +545,44 @@ mod tests {
         assert!(decoded.songs.is_empty());
         assert!(decoded.albums.is_empty());
         assert!(decoded.artists.is_empty());
+    }
+
+    #[test]
+    fn artist_without_followed_field_is_compatible() {
+        let artist: Artist = serde_json::from_value(json!({
+            "id": "r.123",
+            "name": "Nina Simone",
+            "genre": "Jazz",
+            "photo_path": "",
+            "album_count": 1,
+            "song_count": 2,
+            "favorite": false,
+        }))
+        .unwrap();
+        assert!(!artist.followed);
+    }
+
+    #[test]
+    fn artist_change_roundtrip() {
+        let artist: Artist = serde_json::from_value(json!({
+            "id": "cat-1",
+            "name": "Nina Simone",
+            "genre": "Jazz",
+            "photo_path": "",
+            "album_count": 2,
+            "song_count": 3,
+            "favorite": false,
+            "followed": true,
+        }))
+        .unwrap();
+        let change = ArtistChange {
+            artist,
+            synced: true,
+            sync_error: None,
+            removed: false,
+        };
+        let decoded: ArtistChange = serde_json::from_value(to_json(&change)).unwrap();
+        assert!(decoded.artist.followed);
+        assert!(decoded.synced);
     }
 }

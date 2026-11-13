@@ -47,6 +47,8 @@ guarda tu contraseña.
 |---|---|
 | **Tu biblioteca** | Canciones, álbumes, artistas y playlists de tu cuenta de Apple Music, con listas virtuales y búsqueda local por título, artista, álbum o género. |
 | **Búsqueda en el catálogo** | Además de tu biblioteca, busca canciones, álbumes y artistas en todo Apple Music; puedes abrir sus fichas y reproducirlos aunque no los tengas. |
+| **Artistas seguidos** | Añade a tu biblioteca artistas que aún no tienes: aparecen en **Artistas** e **Inicio** y su ficha se completa con los álbumes y canciones populares del catálogo. El guardado es local; la sincronización con Apple Music es best-effort. |
+| **Álbumes a la biblioteca** | Añade un disco completo del catálogo con sus canciones. Se guarda en Musa al instante y se intenta reflejar en tu biblioteca de Apple Music. |
 | **Inicio y Escuchar ahora** | Mezcla personal, novedades de tu biblioteca y un hub editorial con mezclas, favoritas, playlists y artistas. |
 | **Reproductor persistente** | Portada, título y artista, anterior, reproducir/pausar, siguiente, aleatorio, repetición, progreso, tiempos y volumen. Nunca desaparece. |
 | **Cola y letras** | Ver y saltar dentro de la cola; abrir las letras de Apple en una ventana propia con la línea actual resaltada y desplazada al centro. |
@@ -84,6 +86,13 @@ que abre MusicKit y Widevine y reproduce audio en PipeWire.
   música sonando en segundo plano.
 - **Favoritos locales**: el corazón actualiza la copia local; la sincronización
   con Apple Music queda pendiente.
+- **Artistas seguidos locales**: se guardan en `artists.json` y se mezclan con
+  tu biblioteca al arrancar. Añadir un artista no descarga su discografía; su
+  ficha y sus canciones se leen del catálogo. La sincronización con Apple es
+  best-effort y quitarlo solo afecta a Musa.
+- **Álbumes añadidos locales**: se guardan en `albums.json` con sus canciones y
+  se mezclan con tu biblioteca al arrancar, para que sigan ahí aunque la caché
+  de Apple tarde en incluirlos.
 - El protocolo entre la UI y el daemon es JSON por líneas sobre un socket Unix.
 
 ## Instalar
@@ -161,7 +170,7 @@ Rutas en disco (nunca se escribe fuera de ellas):
 
 - `~/.cache/musa/` — `real-library.json`, `covers/`, `player.json`,
   `musad.log` y `sidecar.log`.
-- `~/.config/musa/` — `favorites.json` y `sidecar/` con la sesión de Apple.
+- `~/.config/musa/` — `favorites.json`, `artists.json`, `albums.json` y `sidecar/` con la sesión de Apple.
 - Socket por defecto: `~/.cache/musa/musad.sock` (modo `0600`).
 
 ## Capturas
@@ -190,6 +199,8 @@ sincronización y controles del escritorio.
 | Biblioteca, búsqueda y detalles | **Funciona** |
 | Reproducción con MusicKit/Widevine | **MVP** |
 | Favoritos | **Locales** (sin sincronización con Apple) |
+| Artistas seguidos | **Locales** (sincronización con Apple best-effort) |
+| Álbumes añadidos | **Locales** (sincronización con Apple best-effort) |
 | Letras | **Según permisos del token web** |
 | MPRIS y controles multimedia | **Pendiente** |
 | Restauración de cola entre sesiones | **En diseño** |

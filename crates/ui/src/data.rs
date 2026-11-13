@@ -56,8 +56,55 @@ impl LibraryData {
         self.albums_by_id.get(id)
     }
 
+    pub fn album_by_title_artist(&self, title: &str, artist_name: &str) -> Option<&Album> {
+        self.albums_by_id.values().find(|album| {
+            album.title.eq_ignore_ascii_case(title)
+                && album.artist_name.eq_ignore_ascii_case(artist_name)
+        })
+    }
+
     pub fn artist(&self, id: &str) -> Option<&Artist> {
         self.artists_by_id.get(id)
+    }
+
+    pub fn artist_by_name(&self, name: &str) -> Option<&Artist> {
+        self.artists_by_id
+            .values()
+            .find(|artist| artist.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Refleja localmente un artista añadido o actualizado por el daemon.
+    pub fn upsert_artist(&mut self, artist: Artist) {
+        if let Some(existing) = self.artists_by_id.get_mut(&artist.id) {
+            *existing = artist.clone();
+        } else {
+            self.artists_by_id.insert(artist.id.clone(), artist.clone());
+            self.snapshot.artists.push(artist.clone());
+        }
+        if let Some(slot) = self
+            .snapshot
+            .artists
+            .iter_mut()
+            .find(|existing| existing.id == artist.id)
+        {
+            *slot = artist;
+        }
+        self.rebuild_stats();
+    }
+
+    /// Refleja localmente un artista que se ha dejado de seguir o eliminado.
+    pub fn remove_artist(&mut self, id: &str) {
+        self.artists_by_id.remove(id);
+        self.snapshot.artists.retain(|artist| artist.id != id);
+        self.snapshot.favorites.artist_ids.retain(|fav| fav != id);
+        self.rebuild_stats();
+    }
+
+    fn rebuild_stats(&mut self) {
+        self.snapshot.stats.songs = self.snapshot.songs.len() as u32;
+        self.snapshot.stats.albums = self.snapshot.albums.len() as u32;
+        self.snapshot.stats.artists = self.snapshot.artists.len() as u32;
+        self.snapshot.stats.playlists = self.snapshot.playlists.len() as u32;
     }
 
     pub fn playlist(&self, id: &str) -> Option<&Playlist> {

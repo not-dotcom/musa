@@ -576,11 +576,14 @@ stackswitcher button:checked {
   color: @musa_red;
 }
 
-togglebutton:checked {
-  background-color: rgba(250, 45, 72, 0.18);
+/* En GTK4 un GtkToggleButton usa el nodo CSS `button` con la clase `.toggle`
+   (no existe el elemento `togglebutton`). Se resalta solo el botón de
+   aleatorio; el corazón de favoritos conserva su estilo propio. */
+.shuffle-button:checked {
+  background-color: rgba(250, 45, 72, 0.22);
 }
 
-togglebutton:checked image {
+.shuffle-button:checked image {
   color: @musa_red;
 }
 

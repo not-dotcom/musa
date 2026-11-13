@@ -12,6 +12,7 @@ const path = require('node:path');
 const os = require('node:os');
 const readline = require('node:readline');
 const apple = require('./apple');
+const { setQueueResilient: queueResilient } = require('./queue');
 
 // Rutas permitidas: nada de escribir en ~/.config/Slipmat ni en ~/.config/Electron.
 app.setPath('userData', path.join(os.homedir(), '.config/musa/sidecar'));
@@ -169,6 +170,20 @@ async function musicCommand(action, params = {}) {
   `, true);
 }
 
+// Una lista de reproducción no debe fallar entera porque Apple ya no resuelva
+// una de sus canciones. MusicKit devuelve NOT_FOUND con los ids conflictivos:
+// los quitamos y reintentamos con el resto.
+async function setQueueResilient(params = {}) {
+  const queue = (args) => musicCommand('set-queue', args);
+  const result = await queueResilient(queue, params);
+  if (result.dropped.length) {
+    process.stderr.write(
+      `[queue] se omiten canciones no disponibles: ${result.dropped.join(', ')}\n`,
+    );
+  }
+  return result;
+}
+
 async function execute(command, params) {
   if (!window) throw new Error('ventana no inicializada');
   const js = `
@@ -249,11 +264,17 @@ async function handle(request) {
           path.join(os.homedir(), '.cache/musa'),
         );
         break;
+      case 'follow-artist':
+        data = await apple.followArtist(window, String(params.id || ''));
+        break;
+      case 'add-album':
+        data = await apple.addAlbum(window, String(params.id || ''));
+        break;
       case 'lyrics':
         data = await apple.lyrics(window, params.song_id);
         break;
       case 'set-queue':
-        await musicCommand('set-queue', params);
+        await setQueueResilient(params);
         data = await musicState();
         break;
       case 'player':

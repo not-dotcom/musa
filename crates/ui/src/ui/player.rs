@@ -88,6 +88,7 @@ impl PlayerBar {
             "media-playlist-shuffle-symbolic",
         )));
         shuffle.add_css_class("ghost-button");
+        shuffle.add_css_class("shuffle-button");
         shuffle.set_tooltip_text(Some("Aleatorio"));
         buttons.append(&shuffle);
         let previous = gtk::Button::new();
@@ -298,6 +299,11 @@ impl PlayerBar {
         self.shuffle_guard.set(true);
         self.shuffle.set_active(state.shuffle);
         self.shuffle_guard.set(false);
+        self.shuffle.set_tooltip_text(Some(if state.shuffle {
+            "Aleatorio activado"
+        } else {
+            "Aleatorio"
+        }));
 
         self.repeat_icon
             .set_icon_name(Some(repeat_icon(state.repeat)));

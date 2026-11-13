@@ -62,6 +62,32 @@ async function apiJson(t, url) {
   return res.json();
 }
 
+// Peticiones de escritura: Apple responde 202 sin cuerpo, así que no se puede
+// reutilizar apiJson (que siempre intenta parsear JSON).
+async function apiSend(t, method, url) {
+  const full = url.startsWith('http')
+    ? url
+    : url.startsWith('/v1/')
+      ? 'https://api.music.apple.com' + url
+      : API + url;
+  const res = await fetch(full, {
+    method,
+    signal: AbortSignal.timeout(20000),
+    headers: {
+      Authorization: `Bearer ${t.dev}`,
+      'Music-User-Token': t.user,
+      Accept: 'application/json',
+      Origin: ORIGIN,
+      Referer: REFERER,
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Apple Music ${res.status} en ${full}: ${body.slice(0, 300)}`);
+  }
+  return res.status;
+}
+
 async function apiAll(t, url, max = 10000) {
   const out = [];
   let next = url;
@@ -540,6 +566,42 @@ async function catalogArtist(win, id, cacheRoot) {
   };
 }
 
+// Añade un artista de catálogo a los favoritos/biblioteca del usuario en
+// Apple Music. La operación es best-effort: Musa guarda el artista en local
+// aunque Apple la ignore o la rechace.
+async function followArtist(win, id) {
+  const t = await tokens(win);
+  const params = new URLSearchParams();
+  params.set('ids[artists]', String(id));
+  const query = params.toString();
+  // Apple ha cambiado el endpoint preferido con el tiempo: favoritos es la vía
+  // moderna y la biblioteca la clásica. Probamos ambas antes de rendirnos.
+  const attempts = [
+    `${API}/me/favorites?${query}`,
+    `${API}/me/library?${query}`,
+  ];
+  let firstError = null;
+  for (const url of attempts) {
+    try {
+      await apiSend(t, 'POST', url);
+      return { synced: true, id: String(id) };
+    } catch (error) {
+      if (!firstError) firstError = error;
+    }
+  }
+  throw firstError || new Error('Apple Music no aceptó el artista');
+}
+
+// Añade un álbum de catálogo a la biblioteca de Apple Music. Igual que con
+// los artistas, Musa guarda el álbum en local aunque Apple no confirme.
+async function addAlbum(win, id) {
+  const t = await tokens(win);
+  const params = new URLSearchParams();
+  params.set('ids[albums]', String(id));
+  await apiSend(t, 'POST', `${API}/me/library?${params.toString()}`);
+  return { synced: true, id: String(id) };
+}
+
 function stripTtml(text) {
   return text
     .replace(/<br\s*\/?>/gi, ' ')
@@ -591,6 +653,8 @@ module.exports = {
   search,
   catalogAlbum,
   catalogArtist,
+  followArtist,
+  addAlbum,
   lyrics,
   tokens,
   apiJson,

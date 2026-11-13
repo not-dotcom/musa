@@ -12,7 +12,9 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use musa_protocol::{Favorites, LibrarySnapshot, PlayerState, RepeatMode, Song, event};
+use musa_protocol::{
+    AlbumChange, ArtistChange, Favorites, LibrarySnapshot, PlayerState, RepeatMode, Song, event,
+};
 use relm4::adw;
 use relm4::adw::prelude::*;
 use relm4::gtk;
@@ -243,6 +245,7 @@ impl Actions {
         }
         let start = start.min(songs.len() - 1);
         let queue: Vec<String> = songs.iter().map(|s| s.id.clone()).collect();
+        let requested = queue.len();
         let previous = self.player.borrow().state.clone();
         let state = PlayerState {
             queue,
@@ -268,6 +271,16 @@ impl Actions {
             move |result| match result {
                 Ok(value) => {
                     if let Ok(state) = serde_json::from_value::<PlayerState>(value) {
+                        let skipped = requested.saturating_sub(state.queue.len());
+                        if skipped == 1 {
+                            actions.toast(
+                                "Se omitió 1 canción que Apple Music ya no tiene disponible.",
+                            );
+                        } else if skipped > 1 {
+                            actions.toast(format!(
+                                "Se omitieron {skipped} canciones que Apple Music ya no tiene disponibles."
+                            ));
+                        }
                         player.borrow_mut().set(state);
                     }
                 }
@@ -300,7 +313,10 @@ impl Actions {
         let playing = self.player.borrow().state.playing;
         let has_queue = !self.player.borrow().state.queue.is_empty();
         if !has_queue {
-            if let Some(track) = self.player.borrow().state.track.clone() {
+            // Se clona antes de reproducir: mantener el préstamo del `if let`
+            // mientras `play_songs` pide `borrow_mut()` provoca un pánico.
+            let track = self.player.borrow().state.track.clone();
+            if let Some(track) = track {
                 self.play_song(&track);
             }
             return;
@@ -331,11 +347,21 @@ impl Actions {
     }
 
     pub fn seek(&self, position_ms: u64) {
-        if let Some(track) = &self.player.borrow().state.track {
-            let position_ms = position_ms.min(track.duration_ms);
-            self.player.borrow_mut().state.position_ms = position_ms;
-            self.player.borrow_mut().synced_at = Instant::now();
-        }
+        // Un solo préstamo mutable: el `if let` anterior mantenía vivo el
+        // préstamo de solo lectura y el `borrow_mut()` posterior entraba en
+        // pánico («RefCell already borrowed») al mover la barra de progreso.
+        let position_ms = {
+            let mut player = self.player.borrow_mut();
+            match player.state.track.as_ref() {
+                Some(track) => {
+                    let position_ms = position_ms.min(track.duration_ms);
+                    player.state.position_ms = position_ms;
+                    player.synced_at = Instant::now();
+                    position_ms
+                }
+                None => position_ms,
+            }
+        };
         self.client.call(
             musa_protocol::cmd::PLAYER_SEEK,
             serde_json::json!({"position_ms": position_ms}),
@@ -433,6 +459,166 @@ impl Actions {
         self.built_pages.borrow_mut().insert("favorites".into());
         if self.stack.visible_child_name().as_deref() == Some("favorites") {
             self.stack.set_visible_child_name("favorites");
+        }
+    }
+
+    /// Añade (`followed = true`) o quita un artista de la biblioteca. El
+    /// guardado local del daemon es la fuente de verdad; Apple Music se
+    /// sincroniza como extra.
+    pub fn set_artist_followed(
+        &self,
+        id: &str,
+        followed: bool,
+        on_done: impl FnOnce(bool) + 'static,
+    ) {
+        self.set_artist_followed_boxed(id, followed, Box::new(on_done));
+    }
+
+    /// Igual que [`Self::set_artist_followed`], pero con el callback ya
+    /// boxeado. La llamada recursiva del «Deshacer» usa esta versión para no
+    /// generar instanciaciones infinitas del genérico en release.
+    fn set_artist_followed_boxed(
+        &self,
+        id: &str,
+        followed: bool,
+        on_done: Box<dyn FnOnce(bool) + 'static>,
+    ) {
+        let actions = self.clone();
+        let command = if followed {
+            musa_protocol::cmd::LIBRARY_ADD_ARTIST
+        } else {
+            musa_protocol::cmd::LIBRARY_REMOVE_ARTIST
+        };
+        let id = id.to_string();
+        self.client
+            .call(command, serde_json::json!({"id": id}), move |result| {
+                let change = match result {
+                    Ok(value) => match serde_json::from_value::<ArtistChange>(value) {
+                        Ok(change) => change,
+                        Err(_) => {
+                            actions
+                                .toast("No se pudo actualizar la biblioteca. Inténtalo de nuevo.");
+                            on_done(false);
+                            return;
+                        }
+                    },
+                    Err(error) => {
+                        let message = if error.code == "artist_not_found" {
+                            error.message
+                        } else {
+                            "No se pudo actualizar la biblioteca. Inténtalo de nuevo.".into()
+                        };
+                        actions.toast(message);
+                        on_done(false);
+                        return;
+                    }
+                };
+                if change.removed {
+                    actions.data.borrow_mut().remove_artist(&change.artist.id);
+                } else {
+                    actions
+                        .data
+                        .borrow_mut()
+                        .upsert_artist(change.artist.clone());
+                }
+                actions.rebuild_library_pages();
+
+                let message = if followed {
+                    if change.synced {
+                        "Añadido a tu biblioteca"
+                    } else {
+                        "Añadido a tu biblioteca. Apple Music no confirmó la sincronización."
+                    }
+                } else {
+                    "Artista quitado de tu biblioteca"
+                };
+                let undo = actions.clone();
+                let target = change.artist.id.clone();
+                let undo_followed = !followed;
+                actions.toast_with_action(message, "Deshacer", move || {
+                    undo.set_artist_followed_boxed(&target, undo_followed, Box::new(|_| {}));
+                });
+                on_done(true);
+            });
+    }
+
+    /// Añade un álbum de catálogo con sus canciones a la biblioteca. El
+    /// daemon persiste el álbum y emite `library.album_changed`; la UI recarga
+    /// el snapshot al recibirlo.
+    pub fn add_album(&self, id: &str, on_done: impl FnOnce(bool) + 'static) {
+        let actions = self.clone();
+        let id = id.to_string();
+        self.client.call(
+            musa_protocol::cmd::LIBRARY_ADD_ALBUM,
+            serde_json::json!({"id": id}),
+            move |result| match result {
+                Ok(value) => match serde_json::from_value::<AlbumChange>(value) {
+                    Ok(change) => {
+                        actions.toast(if change.synced {
+                            "Álbum añadido a tu biblioteca"
+                        } else {
+                            "Álbum añadido a tu biblioteca. Apple Music no confirmó la sincronización."
+                        });
+                        on_done(true);
+                    }
+                    Err(_) => {
+                        actions.toast("No se pudo actualizar la biblioteca. Inténtalo de nuevo.");
+                        on_done(false);
+                    }
+                },
+                Err(error) => {
+                    let message = if error.code == "album_not_found" {
+                        error.message
+                    } else {
+                        "No se pudo actualizar la biblioteca. Inténtalo de nuevo.".into()
+                    };
+                    actions.toast(message);
+                    on_done(false);
+                }
+            },
+        );
+    }
+
+    /// Vuelve a pedir el snapshot completo y rehace las páginas de biblioteca.
+    pub fn reload_library(&self) {
+        let actions = self.clone();
+        self.client
+            .call_simple(musa_protocol::cmd::LIBRARY_GET, move |result| {
+                let Ok(value) = result else { return };
+                let Ok(snapshot) = serde_json::from_value::<LibrarySnapshot>(value) else {
+                    return;
+                };
+                *actions.data.borrow_mut() = LibraryData::new(snapshot);
+                actions.rebuild_library_pages();
+            });
+    }
+
+    /// Rehace las páginas que leen la biblioteca tras añadir o quitar un
+    /// artista. La página visible se reconstruye para que el cambio se vea al
+    /// instante; el detalle y la búsqueda se dejan intactos.
+    pub fn rebuild_library_pages(&self) {
+        const PAGES: &[&str] = &[
+            "home",
+            "listen",
+            "albums",
+            "artists",
+            "songs",
+            "playlists",
+            "favorites",
+        ];
+        let current = self.stack.visible_child_name().map(|name| name.to_string());
+        for name in PAGES {
+            if let Some(old) = self.stack.child_by_name(name) {
+                self.stack.remove(&old);
+            }
+            self.built_pages.borrow_mut().remove(*name);
+        }
+        self.favorites_dirty.set(false);
+        if let Some(name) = current {
+            if PAGES.contains(&name.as_str()) {
+                self.ensure_page(&name);
+                self.stack.set_visible_child_name(&name);
+            }
         }
     }
 
@@ -540,6 +726,10 @@ fn build_shell(
     split.set_min_sidebar_width(196.0);
     split.set_max_sidebar_width(238.0);
     split.set_sidebar_width_fraction(0.18);
+    // La barra lateral siempre se superpone al contenido: abrirla no
+    // redistribuye la rejilla ni puede empujar el ancho mínimo de la ventana.
+    // El panel se desliza por encima de la página, que se queda quieta.
+    split.set_collapsed(true);
     split.set_show_sidebar(true);
     // El contenido se centra y no pasa de 1400 px: en pantallas anchas la
     // biblioteca deja de estirarse y los textos no cruzan media pantalla.
@@ -619,31 +809,11 @@ fn build_shell(
     let sidebar = build_sidebar(&actions);
     split.set_sidebar(Some(&sidebar));
 
-    // En ventanas estrechas la navegación se convierte en un panel superpuesto:
-    // recupera el ancho del contenido sin perder el acceso a las secciones.
-    let auto_hidden = Rc::new(Cell::new(false));
-    let split_resp = split.clone();
-    let window_resp = window.clone();
-    let auto = auto_hidden.clone();
+    // Las rejillas se recalculan con el ancho real del contenido cuando cambia
+    // la ventana. La barra lateral es superpuesta, así que no lo altera.
     let stack_resp = stack.clone();
     let syncers = actions.grid_syncers.clone();
     gtk::glib::timeout_add_local(Duration::from_millis(180), move || {
-        let width = window_resp.width();
-        if width <= 0 {
-            return gtk::glib::ControlFlow::Continue;
-        }
-        let narrow = width < 1100;
-        if narrow && !auto.get() {
-            split_resp.set_collapsed(true);
-            split_resp.set_show_sidebar(false);
-            auto.set(true);
-        } else if !narrow && auto.get() {
-            split_resp.set_collapsed(false);
-            split_resp.set_show_sidebar(true);
-            auto.set(false);
-        }
-        // Las rejillas se recalculan con el ancho real del contenido, que
-        // cambia con la sidebar, el clamp y el tamaño de la ventana.
         let content = stack_resp.width();
         if content > 0 {
             for sync in syncers.borrow().iter() {
@@ -813,6 +983,19 @@ fn start_ticker(actions: &Actions, bar: &PlayerBar) {
                         actions.data.borrow_mut().apply_favorites(&favorites);
                         actions.favorites_dirty.set(true);
                     }
+                }
+                event::ARTIST_CHANGED => {
+                    if let Ok(change) = serde_json::from_value::<ArtistChange>(event.data) {
+                        if change.removed {
+                            actions.data.borrow_mut().remove_artist(&change.artist.id);
+                        } else {
+                            actions.data.borrow_mut().upsert_artist(change.artist);
+                        }
+                        actions.rebuild_library_pages();
+                    }
+                }
+                event::ALBUM_CHANGED => {
+                    actions.reload_library();
                 }
                 event::ENGINE_CHANGED => {
                     actions.toast("El reproductor se ha reiniciado. Vuelve a darle a reproducir.");
