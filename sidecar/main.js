@@ -28,6 +28,10 @@ function send(message) {
   process.stdout.write(JSON.stringify(message) + '\n');
 }
 
+// Si musad muere, el pipe de stdout se rompe: sin esto un EPIPE podría tumbar
+// el proceso con una traza en vez de permitir un cierre ordenado.
+process.stdout.on('error', () => {});
+
 function event(name, data) {
   send({ v: 1, event: name, data });
 }
@@ -221,6 +225,30 @@ async function handle(request) {
           Boolean(params.refresh),
         );
         break;
+      case 'search':
+        // Catálogo de Apple Music: canciones, álbumes y artistas que no tienen
+        // por qué estar en la biblioteca. Las portadas quedan en disco.
+        data = await apple.search(
+          window,
+          String(params.query || ''),
+          Number(params.limit) || 20,
+          path.join(os.homedir(), '.cache/musa'),
+        );
+        break;
+      case 'catalog-album':
+        data = await apple.catalogAlbum(
+          window,
+          String(params.id || ''),
+          path.join(os.homedir(), '.cache/musa'),
+        );
+        break;
+      case 'catalog-artist':
+        data = await apple.catalogArtist(
+          window,
+          String(params.id || ''),
+          path.join(os.homedir(), '.cache/musa'),
+        );
+        break;
       case 'lyrics':
         data = await apple.lyrics(window, params.song_id);
         break;
@@ -305,7 +333,23 @@ app.whenReady().then(async () => {
       event('engine.error', { message: `JSON inválido: ${error}` });
     }
   });
+  // Si musad desaparece (cierre normal, crash o kill), stdin se cierra. Sin
+  // esto Electron seguiría vivo y la música continuaría sonando sin interfaz.
+  rl.on('close', () => quit('stdin cerrado'));
 });
+
+let quitting = false;
+function quit(reason) {
+  if (quitting) return;
+  quitting = true;
+  event('engine.stopped', { reason, state: lastState });
+  app.quit();
+  // Red de seguridad: si el renderer de audio no suelta el motor, salimos.
+  setTimeout(() => app.exit(0), 3000).unref();
+}
+
+process.on('SIGTERM', () => quit('sigterm'));
+process.on('SIGINT', () => quit('sigint'));
 
 app.on('before-quit', () => {
   if (idleTimer) clearTimeout(idleTimer);

@@ -190,7 +190,7 @@ function songFrom(attrs, rawId) {
     cover_path: '',
     favorite: attrs.inFavorites === true,
     playable: true,
-    explicit: false,
+    explicit: attrs.contentRating === 'explicit',
     _artwork: coverUrl(attrs),
     _genre: (attrs.genreNames && attrs.genreNames[0]) || 'Música',
     _year: yearOf(attrs.releaseDate),
@@ -336,6 +336,210 @@ async function buildLibrary(win, cacheRoot, refresh = false) {
   return snapshot;
 }
 
+// ---------------------------------------------------------------------------
+// Catálogo de Apple Music (no la biblioteca)
+// ---------------------------------------------------------------------------
+
+function cleanSong(song) {
+  const { _artwork, _genre, _year, ...rest } = song;
+  return rest;
+}
+
+function cleanAlbum(album) {
+  const { _artwork, ...rest } = album;
+  return rest;
+}
+
+function cleanArtist(artist) {
+  const { _artwork, ...rest } = artist;
+  return rest;
+}
+
+function catalogAlbumFrom(item) {
+  const attrs = item.attributes || {};
+  const relArtist =
+    item.relationships &&
+    item.relationships.artists &&
+    item.relationships.artists.data &&
+    item.relationships.artists.data[0];
+  return {
+    id: String(item.id || (attrs.playParams && attrs.playParams.id) || ''),
+    title: attrs.name || 'Álbum',
+    artist_id: relArtist
+      ? String(relArtist.id)
+      : hash(attrs.artistName || '', 'artist-cat'),
+    artist_name:
+      attrs.artistName ||
+      (relArtist && relArtist.attributes && relArtist.attributes.name) ||
+      'Artista desconocido',
+    year: yearOf(attrs.releaseDate),
+    genre: (attrs.genreNames && attrs.genreNames[0]) || 'Música',
+    track_count: attrs.trackCount || 0,
+    cover_path: '',
+    favorite: false,
+    playable: true,
+    _artwork: coverUrl(attrs),
+  };
+}
+
+function catalogArtistFrom(item) {
+  const attrs = item.attributes || {};
+  return {
+    id: String(item.id || ''),
+    name: attrs.name || 'Artista',
+    genre: (attrs.genreNames && attrs.genreNames[0]) || 'Música',
+    photo_path: '',
+    album_count: 0,
+    song_count: 0,
+    favorite: false,
+    _artwork: coverUrl(attrs),
+  };
+}
+
+function catalogSongFrom(attrs, rawId, albumId, artistId) {
+  const song = songFrom(attrs, rawId);
+  if (!song) return null;
+  if (albumId) song.album_id = String(albumId);
+  if (artistId) song.artist_id = String(artistId);
+  return song;
+}
+
+function coverIn(covers, item) {
+  return (item._artwork && covers.get(item._artwork)) || '';
+}
+
+// Busca canciones, álbumes y artistas en el catálogo de Apple Music. Las
+// portadas se cachean en disco para que la UI las pinte como las locales.
+async function search(win, query, limit = 20, cacheRoot) {
+  const term = String(query || '').trim();
+  if (!term) return { songs: [], albums: [], artists: [] };
+  const t = await tokens(win);
+  const store = encodeURIComponent(t.store);
+  const size = Math.max(1, Math.min(25, Number(limit) || 20));
+  const page = await apiJson(
+    t,
+    `/catalog/${store}/search?term=${encodeURIComponent(term)}&types=songs,albums,artists&limit=${size}`,
+  );
+  const results = page.results || {};
+  const songs = ((results.songs && results.songs.data) || [])
+    .map((item) => songFrom(item.attributes || {}, item.id))
+    .filter(Boolean);
+  const albums = ((results.albums && results.albums.data) || [])
+    .slice(0, 10)
+    .map(catalogAlbumFrom);
+  const artists = ((results.artists && results.artists.data) || [])
+    .slice(0, 10)
+    .map(catalogArtistFrom);
+
+  const covers = await downloadCovers(
+    [
+      ...songs.map((s) => s._artwork),
+      ...albums.map((a) => a._artwork),
+      ...artists.map((a) => a._artwork),
+    ],
+    cacheRoot,
+  );
+  for (const song of songs) song.cover_path = coverIn(covers, song);
+  for (const album of albums) album.cover_path = coverIn(covers, album);
+  for (const artist of artists) artist.photo_path = coverIn(covers, artist);
+
+  return {
+    songs: songs.map(cleanSong),
+    albums: albums.map(cleanAlbum),
+    artists: artists.map(cleanArtist),
+  };
+}
+
+// Detalle de un álbum del catálogo con sus pistas y el artista real (para que
+// el enlace del artista abra su página de catálogo).
+async function catalogAlbum(win, id, cacheRoot) {
+  const t = await tokens(win);
+  const store = encodeURIComponent(t.store);
+  const page = await apiJson(
+    t,
+    `/catalog/${store}/albums/${encodeURIComponent(id)}?include=tracks,artists&limit%5Btracks%5D=100`,
+  );
+  const item = page.data && page.data[0];
+  if (!item) throw new Error('álbum no encontrado');
+  const album = catalogAlbumFrom(item);
+  const tracks =
+    (item.relationships && item.relationships.tracks && item.relationships.tracks.data) || [];
+  const songs = tracks
+    .map((track) =>
+      catalogSongFrom(track.attributes || {}, track.id, album.id, album.artist_id),
+    )
+    .filter(Boolean);
+  album.track_count = album.track_count || songs.length;
+
+  const covers = await downloadCovers(
+    [album._artwork, ...songs.map((s) => s._artwork)],
+    cacheRoot,
+  );
+  album.cover_path = coverIn(covers, album);
+  for (const song of songs) {
+    song.cover_path = coverIn(covers, song) || album.cover_path;
+  }
+  return { album: cleanAlbum(album), songs: songs.map(cleanSong) };
+}
+
+// Detalle de un artista del catálogo: sus álbumes y una lista de canciones
+// populares para poder escucharlo sin tener nada en la biblioteca.
+async function catalogArtist(win, id, cacheRoot) {
+  const t = await tokens(win);
+  const store = encodeURIComponent(t.store);
+  const [page, top] = await Promise.all([
+    apiJson(
+      t,
+      `/catalog/${store}/artists/${encodeURIComponent(id)}?include=albums&limit%5Balbums%5D=50`,
+    ),
+    apiJson(
+      t,
+      `/catalog/${store}/artists/${encodeURIComponent(id)}/view/top-songs?limit=20`,
+    ).catch(() => ({ data: [] })),
+  ]);
+  const item = page.data && page.data[0];
+  if (!item) throw new Error('artista no encontrado');
+  const artist = catalogArtistFrom(item);
+  const albumItems =
+    (item.relationships && item.relationships.albums && item.relationships.albums.data) || [];
+  const albums = albumItems.map((albumItem) => {
+    const album = catalogAlbumFrom(albumItem);
+    album.artist_id = artist.id;
+    album.artist_name = artist.name;
+    return album;
+  });
+  const songs = ((top && top.data) || [])
+    .map((songItem) =>
+      catalogSongFrom(songItem.attributes || {}, songItem.id, null, artist.id),
+    )
+    .filter(Boolean);
+
+  const covers = await downloadCovers(
+    [
+      artist._artwork,
+      ...albums.map((a) => a._artwork),
+      ...songs.map((s) => s._artwork),
+    ],
+    cacheRoot,
+  );
+  const firstAlbumCover =
+    albums.map((a) => coverIn(covers, a)).find(Boolean) ||
+    songs.map((s) => coverIn(covers, s)).find(Boolean) ||
+    '';
+  artist.photo_path = coverIn(covers, artist) || firstAlbumCover;
+  for (const album of albums) album.cover_path = coverIn(covers, album);
+  for (const song of songs) {
+    song.cover_path = coverIn(covers, song) || firstAlbumCover;
+  }
+  artist.album_count = albums.length;
+  artist.song_count = songs.length;
+  return {
+    artist: cleanArtist(artist),
+    albums: albums.map(cleanAlbum),
+    songs: songs.map(cleanSong),
+  };
+}
+
 function stripTtml(text) {
   return text
     .replace(/<br\s*\/?>/gi, ' ')
@@ -382,4 +586,12 @@ async function lyrics(win, songId) {
   return { song_id: songId, lines, synced: Boolean(ttml), source: 'apple' };
 }
 
-module.exports = { buildLibrary, lyrics, tokens, apiJson };
+module.exports = {
+  buildLibrary,
+  search,
+  catalogAlbum,
+  catalogArtist,
+  lyrics,
+  tokens,
+  apiJson,
+};

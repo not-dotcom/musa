@@ -683,6 +683,7 @@ pub fn song_list(
                 song,
                 show_album,
                 show_meta_album,
+                true,
             ));
         }
     });
@@ -716,6 +717,7 @@ pub fn song_row(
     song: &Song,
     show_album: bool,
     show_meta_album: bool,
+    show_favorite: bool,
 ) -> gtk::Widget {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     row.add_css_class("song-row");
@@ -786,25 +788,27 @@ pub fn song_row(
     }
     row.append(&explicit_slot);
 
-    let favorite = heart_button(song.favorite);
-    favorite.set_tooltip_text(Some(if song.favorite {
-        "Quitar de favoritos"
-    } else {
-        "Añadir a favoritos"
-    }));
-    let actions_fav = actions.clone();
-    let song_fav = song.clone();
-    favorite.connect_clicked(move |button| {
-        let now = !song_fav.favorite;
-        actions_fav.toggle_favorite("song", &song_fav.id, now);
-        set_heart(button, now);
-        button.set_tooltip_text(Some(if now {
+    if show_favorite {
+        let favorite = heart_button(song.favorite);
+        favorite.set_tooltip_text(Some(if song.favorite {
             "Quitar de favoritos"
         } else {
             "Añadir a favoritos"
         }));
-    });
-    row.append(&favorite);
+        let actions_fav = actions.clone();
+        let song_fav = song.clone();
+        favorite.connect_clicked(move |button| {
+            let now = !song_fav.favorite;
+            actions_fav.toggle_favorite("song", &song_fav.id, now);
+            set_heart(button, now);
+            button.set_tooltip_text(Some(if now {
+                "Quitar de favoritos"
+            } else {
+                "Añadir a favoritos"
+            }));
+        });
+        row.append(&favorite);
+    }
 
     let length = gtk::Label::new(Some(&duration(song.duration_ms)));
     length.set_width_chars(5);
@@ -826,6 +830,7 @@ pub fn song_rows(
     songs: &[Song],
     show_album: bool,
     show_meta_album: bool,
+    show_favorite: bool,
 ) -> gtk::Widget {
     let list = gtk::ListBox::new();
     list.set_selection_mode(gtk::SelectionMode::None);
@@ -843,6 +848,7 @@ pub fn song_rows(
             song,
             show_album,
             show_meta_album,
+            show_favorite,
         )));
         list.append(&row);
     }
@@ -973,6 +979,29 @@ pub fn collection_summary(count: usize, total_ms: u64) -> String {
 /// Fila de resultado de búsqueda sin controles anidados: se puede pulsar
 /// entera y reproduce la canción.
 pub fn song_result_button(actions: &Actions, song: &Song) -> gtk::Button {
+    let button = song_result_view(actions, song);
+    let actions = actions.clone();
+    let song = song.clone();
+    button.connect_clicked(move |_| actions.play_song(&song));
+    button
+}
+
+/// Resultado de una canción del catálogo que puede no estar en la biblioteca.
+/// Al pulsarla se encola la lista completa de resultados, de modo que
+/// siguiente y anterior funcionan también fuera de la biblioteca.
+pub fn catalog_song_result_button(
+    actions: &Actions,
+    songs: &Rc<Vec<Song>>,
+    index: usize,
+) -> gtk::Button {
+    let button = song_result_view(actions, &songs[index]);
+    let actions = actions.clone();
+    let songs = songs.clone();
+    button.connect_clicked(move |_| actions.play_songs(&songs, index));
+    button
+}
+
+fn song_result_view(actions: &Actions, song: &Song) -> gtk::Button {
     let button = gtk::Button::new();
     button.add_css_class("song-result");
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -1003,8 +1032,5 @@ pub fn song_result_button(actions: &Actions, song: &Song) -> gtk::Button {
     time.add_css_class("song-duration");
     row.append(&time);
     button.set_child(Some(&row));
-    let actions = actions.clone();
-    let song = song.clone();
-    button.connect_clicked(move |_| actions.play_song(&song));
     button
 }

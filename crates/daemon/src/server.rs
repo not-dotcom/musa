@@ -3,6 +3,7 @@
 //! Un hilo por conexión, un hilo global para el reloj de reproducción y un
 //! canal por cliente para los eventos. No hay HTTP ni puertos TCP.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -11,9 +12,9 @@ use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use musa_protocol::{
-    Album, Artist, Event, Favorites, Hello, Lyrics, PlayerState, Playlist, ProtocolError,
-    RepeatMode, Request, Response, SearchResults, Song, cmd, encode_line, event, parse_request,
-    to_json,
+    Album, AlbumDetail, Artist, ArtistDetail, CatalogResults, Event, Favorites, Hello, Lyrics,
+    PlayerState, Playlist, ProtocolError, RepeatMode, Request, Response, SearchResults, Song, cmd,
+    encode_line, event, parse_request, to_json,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -76,6 +77,9 @@ struct Shared {
     library: RwLock<Library>,
     player: Mutex<Player>,
     clients: Mutex<Vec<ClientHandle>>,
+    /// Portada local de canciones del catálogo que no están en la biblioteca,
+    /// para que el reproductor no las muestre vacías.
+    catalog_covers: Mutex<HashMap<String, String>>,
     covers_dir: PathBuf,
     favorites_path: PathBuf,
     player_path: PathBuf,
@@ -164,6 +168,17 @@ struct SearchParams {
     query: String,
     #[serde(default = "default_limit")]
     limit: usize,
+}
+
+/// Respuesta del sidecar para `search`: el daemon le añade la consulta.
+#[derive(Debug, Default, Deserialize)]
+struct SidecarCatalogSearch {
+    #[serde(default)]
+    songs: Vec<Song>,
+    #[serde(default)]
+    albums: Vec<Album>,
+    #[serde(default)]
+    artists: Vec<Artist>,
 }
 
 fn default_limit() -> usize {
@@ -258,6 +273,7 @@ pub fn run(
         library: RwLock::new(library),
         player: Mutex::new(Player::default()),
         clients: Mutex::new(Vec::new()),
+        catalog_covers: Mutex::new(HashMap::new()),
         covers_dir: config.covers_dir,
         favorites_path: config.favorites_path,
         player_path: config.player_path,
@@ -372,7 +388,15 @@ fn apply_real_state(state: &Arc<Shared>, value: Value) -> Result<PlayerState, Pr
                 track_number: 1,
                 disc_number: 1,
                 duration_ms: t.duration_ms,
-                cover_path: String::new(),
+                // Canciones buscadas en el catálogo: la portada se guardó al
+                // devolver los resultados, así el reproductor sí la muestra.
+                cover_path: state
+                    .catalog_covers
+                    .lock()
+                    .unwrap()
+                    .get(&t.id)
+                    .cloned()
+                    .unwrap_or_default(),
                 favorite: false,
                 playable: true,
                 explicit: false,
@@ -478,6 +502,7 @@ fn serve_client(
     static NEXT_CLIENT: AtomicU64 = AtomicU64::new(1);
     let client_id = NEXT_CLIENT.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel::<String>();
+    let reply_tx = tx.clone();
     state
         .clients
         .lock()
@@ -503,7 +528,25 @@ fn serve_client(
         if line.trim().is_empty() {
             continue;
         }
+        // A partir de aquí hay una UI real usando el daemon. Si el proceso
+        // desaparece (cierre normal, crash o kill), `shutdown_when_idle` debe
+        // pausar el motor y apagarlo en cuanto no queden clientes.
+        state.had_client.store(true, Ordering::Relaxed);
         let response = match parse_request(&line) {
+            // La búsqueda en el catálogo habla con Apple y puede tardar. Se
+            // atiende en otro hilo para no retrasar los comandos del
+            // reproductor que vengan detrás en esta misma conexión.
+            Ok(req) if is_catalog_command(&req.cmd) => {
+                let state = state.clone();
+                let name = name.clone();
+                let version = version.clone();
+                let tx = reply_tx.clone();
+                std::thread::spawn(move || {
+                    let response = handle_request(&state, &name, &version, req);
+                    let _ = tx.send(encode_line(&response));
+                });
+                continue;
+            }
             Ok(req) => handle_request(&state, &name, &version, req),
             Err(err) => Response::err(0, &err.code, err.message),
         };
@@ -538,6 +581,42 @@ fn handle_request(state: &Arc<Shared>, name: &str, version: &str, req: Request) 
     match dispatch(state, name, version, &req) {
         Ok(data) => Response::ok(id, data),
         Err(err) => Response::err(id, &err.code, err.message),
+    }
+}
+
+/// Comandos que hablan con Apple por el sidecar y por eso se atienden fuera del
+/// hilo de lectura de la conexión.
+fn is_catalog_command(name: &str) -> bool {
+    name == cmd::SEARCH_CATALOG || name == cmd::CATALOG_ALBUM || name == cmd::CATALOG_ARTIST
+}
+
+/// Llama al sidecar para una operación de catálogo y normaliza el error.
+fn catalog_call(
+    state: &Shared,
+    command: &str,
+    params: Value,
+    timeout: Duration,
+    code: &str,
+) -> Result<Value, ProtocolError> {
+    let sidecar = state.sidecar.as_deref().ok_or_else(|| {
+        ProtocolError::new(
+            "sin_motor",
+            "esta operación necesita el motor de Apple Music",
+        )
+    })?;
+    sidecar
+        .call(command, params, timeout)
+        .map_err(|e| ProtocolError::new(code, e.message))
+}
+
+/// Recuerda la portada de pistas de catálogo para que el reproductor las pinte
+/// aunque no estén en la biblioteca.
+fn remember_song_covers(state: &Shared, songs: &[Song]) {
+    let mut covers = state.catalog_covers.lock().unwrap();
+    for song in songs {
+        if !song.cover_path.is_empty() {
+            covers.insert(song.id.clone(), song.cover_path.clone());
+        }
     }
 }
 
@@ -922,6 +1001,63 @@ fn dispatch(
                 artists,
                 playlists,
             }))
+        }
+        cmd::SEARCH_CATALOG => {
+            let params: SearchParams = musa_protocol::params(req)?;
+            let query = params.query.trim().to_string();
+            if query.is_empty() {
+                return Ok(to_json(&CatalogResults {
+                    query: params.query,
+                    songs: Vec::new(),
+                    albums: Vec::new(),
+                    artists: Vec::new(),
+                }));
+            }
+            let limit = params.limit.clamp(1, 25);
+            let value = catalog_call(
+                state,
+                "search",
+                json!({"query": query, "limit": limit}),
+                Duration::from_secs(15),
+                "catalog_search",
+            )?;
+            let payload: SidecarCatalogSearch = serde_json::from_value(value)
+                .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
+            remember_song_covers(state, &payload.songs);
+            Ok(to_json(&CatalogResults {
+                query: params.query,
+                songs: payload.songs,
+                albums: payload.albums,
+                artists: payload.artists,
+            }))
+        }
+        cmd::CATALOG_ALBUM => {
+            let params: IdParams = musa_protocol::params(req)?;
+            let value = catalog_call(
+                state,
+                "catalog-album",
+                json!({"id": params.id}),
+                Duration::from_secs(25),
+                "catalog_album",
+            )?;
+            let detail: AlbumDetail = serde_json::from_value(value)
+                .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
+            remember_song_covers(state, &detail.songs);
+            Ok(to_json(&detail))
+        }
+        cmd::CATALOG_ARTIST => {
+            let params: IdParams = musa_protocol::params(req)?;
+            let value = catalog_call(
+                state,
+                "catalog-artist",
+                json!({"id": params.id}),
+                Duration::from_secs(25),
+                "catalog_artist",
+            )?;
+            let detail: ArtistDetail = serde_json::from_value(value)
+                .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
+            remember_song_covers(state, &detail.songs);
+            Ok(to_json(&detail))
         }
         cmd::LYRICS_GET => {
             let params: IdParams = musa_protocol::params(req)?;

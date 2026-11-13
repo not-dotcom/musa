@@ -139,6 +139,12 @@ pub mod cmd {
     pub const FAVORITE_SET: &str = "favorite.set";
     pub const HOME_GET: &str = "home.get";
     pub const SEARCH: &str = "search";
+    /// Busca canciones, álbumes y artistas en el catálogo de Apple Music.
+    pub const SEARCH_CATALOG: &str = "search.catalog";
+    /// Detalle de un álbum del catálogo: `{album, songs}`.
+    pub const CATALOG_ALBUM: &str = "catalog.album";
+    /// Detalle de un artista del catálogo: `{artist, albums, songs}`.
+    pub const CATALOG_ARTIST: &str = "catalog.artist";
     pub const LYRICS_GET: &str = "lyrics.get";
     pub const COVER_ENSURE: &str = "cover.ensure";
     pub const QUEUE_SET: &str = "queue.set";
@@ -323,6 +329,32 @@ pub struct SearchResults {
     pub playlists: Vec<Playlist>,
 }
 
+/// Resultados del catálogo de Apple Music. Las canciones, álbumes y artistas
+/// pueden no estar en la biblioteca y aun así abrirse y reproducirse por su id
+/// de catálogo.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CatalogResults {
+    pub query: String,
+    pub songs: Vec<Song>,
+    pub albums: Vec<Album>,
+    pub artists: Vec<Artist>,
+}
+
+/// Detalle de un álbum del catálogo. Misma forma que `album.get`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AlbumDetail {
+    pub album: Album,
+    pub songs: Vec<Song>,
+}
+
+/// Detalle de un artista del catálogo. Misma forma que `artist.get`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ArtistDetail {
+    pub artist: Artist,
+    pub albums: Vec<Album>,
+    pub songs: Vec<Song>,
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RepeatMode {
@@ -456,5 +488,20 @@ mod tests {
         assert_eq!(RepeatMode::Off.cycle(), RepeatMode::All);
         assert_eq!(RepeatMode::All.cycle(), RepeatMode::One);
         assert_eq!(RepeatMode::One.cycle(), RepeatMode::Off);
+    }
+
+    #[test]
+    fn catalog_results_roundtrip() {
+        let value = to_json(&CatalogResults {
+            query: "nina simone".into(),
+            songs: vec![],
+            albums: vec![],
+            artists: vec![],
+        });
+        let decoded: CatalogResults = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.query, "nina simone");
+        assert!(decoded.songs.is_empty());
+        assert!(decoded.albums.is_empty());
+        assert!(decoded.artists.is_empty());
     }
 }

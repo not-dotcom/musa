@@ -87,6 +87,9 @@ pub struct Actions {
     nav_guard: Rc<Cell<bool>>,
     now_rows: Rc<RefCell<Vec<gtk::glib::WeakRef<gtk::Box>>>>,
     grid_syncers: Rc<RefCell<Vec<Rc<dyn Fn(i32)>>>>,
+    /// Detalle de catálogo en curso (`album:<id>` / `artist:<id>`). Sirve para
+    /// descartar respuestas que llegan después de cambiar de página.
+    pub pending_detail: Rc<RefCell<Option<String>>>,
 }
 
 const PAGES: &[(&str, &str, &str)] = &[
@@ -110,6 +113,7 @@ fn page_title(name: &str) -> &'static str {
 
 impl Actions {
     pub fn select(&self, name: &str) {
+        *self.pending_detail.borrow_mut() = None;
         self.history.borrow_mut().clear();
         if name == "favorites" && self.favorites_dirty.get() {
             self.refresh_favorites();
@@ -201,6 +205,7 @@ impl Actions {
     }
 
     pub fn back(&self) {
+        *self.pending_detail.borrow_mut() = None;
         let previous = self
             .history
             .borrow_mut()
@@ -560,6 +565,7 @@ fn build_shell(
     let nav_guard = Rc::new(Cell::new(false));
     let now_rows = Rc::new(RefCell::new(Vec::new()));
     let grid_syncers: Rc<RefCell<Vec<Rc<dyn Fn(i32)>>>> = Rc::new(RefCell::new(Vec::new()));
+    let pending_detail = Rc::new(RefCell::new(None));
 
     let actions = Actions {
         client: client.clone(),
@@ -581,6 +587,7 @@ fn build_shell(
         nav_guard,
         now_rows,
         grid_syncers,
+        pending_detail,
     };
 
     // Barra superior.

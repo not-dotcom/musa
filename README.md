@@ -46,6 +46,7 @@ guarda tu contraseña.
 | Función | Qué puedes hacer |
 |---|---|
 | **Tu biblioteca** | Canciones, álbumes, artistas y playlists de tu cuenta de Apple Music, con listas virtuales y búsqueda local por título, artista, álbum o género. |
+| **Búsqueda en el catálogo** | Además de tu biblioteca, busca canciones, álbumes y artistas en todo Apple Music; puedes abrir sus fichas y reproducirlos aunque no los tengas. |
 | **Inicio y Escuchar ahora** | Mezcla personal, novedades de tu biblioteca y un hub editorial con mezclas, favoritas, playlists y artistas. |
 | **Reproductor persistente** | Portada, título y artista, anterior, reproducir/pausar, siguiente, aleatorio, repetición, progreso, tiempos y volumen. Nunca desaparece. |
 | **Cola y letras** | Ver y saltar dentro de la cola; abrir las letras de Apple en una ventana propia con la línea actual resaltada y desplazada al centro. |
