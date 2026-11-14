@@ -27,6 +27,8 @@ account through a local sidecar running MusicKit and Widevine.
 The idea is simple: **install Musa, open it, sign in to Apple Music and your
 library shows up.**
 
+> The interface is currently in Spanish; Musa is not localized yet.
+
 The name is also a wink: ***mus*** is mouse in Latin, hence the little grey and
 black mouse in the logo.
 
