@@ -5,5 +5,5 @@ PREFIX="$ROOT/.deps/sysroot/usr"
 if ! PKG_CONFIG_PATH="$PREFIX/lib64/pkgconfig" pkg-config --exists libadwaita-1; then
     "$ROOT/scripts/setup-libadwaita.sh"
 fi
-export PKG_CONFIG_PATH="$PREFIX/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export PKG_CONFIG_PATH="$PREFIX/lib64/pkgconfig"
 exec cargo build --release "$@"

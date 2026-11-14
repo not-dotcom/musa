@@ -12,9 +12,10 @@ use relm4::gtk::prelude::*;
 
 use super::Actions;
 use super::widgets::{
-    album_card_button, artist_card_button, catalog_song_result_button, page_header, page_scroll,
-    playlist_card_button, song_result_button,
+    album_card_button, artist_avatar, artist_card_button, catalog_song_result_button, page_header,
+    page_scroll, playlist_card_button, song_result_button,
 };
+use crate::data::plural;
 
 /// Lo que se ha recibido de cada fuente. `None` significa “todavía buscando”.
 #[derive(Default)]
@@ -223,7 +224,8 @@ fn clear_results(results: &gtk::Box, hint: Option<&str>) {
 }
 
 /// Pinta lo que ya haya de cada fuente. Se llama dos veces por búsqueda: al
-/// llegar la biblioteca y al llegar el catálogo, sin borrar lo anterior.
+/// llegar el catálogo y al llegar la biblioteca, sin borrar lo anterior. El
+/// catálogo se dibuja siempre arriba y la biblioteca debajo.
 fn render(actions: &Actions, container: &gtk::Box, data: &Rc<RefCell<SearchData>>) {
     let (library, catalog, catalog_failed) = {
         let state = data.borrow();
@@ -236,13 +238,8 @@ fn render(actions: &Actions, container: &gtk::Box, data: &Rc<RefCell<SearchData>
     clear_results(container, None);
     let mut shown = 0usize;
 
-    match &library {
-        Some(results) => shown += render_library(actions, container, results),
-        None => container.append(&pending_label("Buscando en tu biblioteca…")),
-    }
-
     if let Some(results) = &catalog {
-        // No repetir canciones que ya salieron en la biblioteca.
+        // No repetir nada que ya haya salido en la biblioteca.
         let known_songs: HashSet<&str> = library
             .as_ref()
             .map(|library| library.songs.iter().map(|song| song.id.as_str()).collect())
@@ -251,21 +248,10 @@ fn render(actions: &Actions, container: &gtk::Box, data: &Rc<RefCell<SearchData>
             .songs
             .iter()
             .filter(|song| !known_songs.contains(song.id.as_str()))
-            .take(20)
+            .take(10)
             .cloned()
             .collect();
-        if !fresh_songs.is_empty() {
-            container.append(&section("En Apple Music"));
-            let fresh = Rc::new(fresh_songs);
-            let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            for index in 0..fresh.len() {
-                list.append(&catalog_song_result_button(actions, &fresh, index));
-            }
-            container.append(&list);
-            shown += fresh.len();
-        }
 
-        // Tampoco repetir álbumes y artistas que ya están en la biblioteca.
         let known_albums: HashSet<(String, String)> = library
             .as_ref()
             .map(|library| {
@@ -286,15 +272,6 @@ fn render(actions: &Actions, container: &gtk::Box, data: &Rc<RefCell<SearchData>
             .take(10)
             .cloned()
             .collect();
-        if !fresh_albums.is_empty() {
-            container.append(&section("Álbumes en Apple Music"));
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-            for album in &fresh_albums {
-                row.append(&album_card_button(actions, album));
-            }
-            container.append(&carousel(&row));
-            shown += fresh_albums.len();
-        }
 
         let known_artists: HashSet<String> = library
             .as_ref()
@@ -313,14 +290,71 @@ fn render(actions: &Actions, container: &gtk::Box, data: &Rc<RefCell<SearchData>
             .take(10)
             .cloned()
             .collect();
-        if !fresh_artists.is_empty() {
-            container.append(&section("Artistas en Apple Music"));
+
+        // El artista más relevante encabeza la sección; el resto se agrupa al
+        // final bajo «Otros artistas».
+        let (headliner, other_artists) = match fresh_artists.split_first() {
+            Some((first, rest)) => (Some(first.clone()), rest.to_vec()),
+            None => (None, Vec::new()),
+        };
+        let has_content = headliner.is_some()
+            || !fresh_songs.is_empty()
+            || !fresh_albums.is_empty()
+            || !other_artists.is_empty();
+        if has_content {
+            container.append(&section("En Apple Music"));
+        }
+
+        if let Some(artist) = &headliner {
+            container.append(&featured_artist_button(actions, artist));
+            shown += 1;
+        }
+
+        if !fresh_songs.is_empty() {
+            container.append(&section("Canciones"));
+            // El botón final lleva al perfil del artista de la canción más
+            // relevante, aunque no esté en la biblioteca.
+            let lead = fresh_songs[0].clone();
+            let fresh = Rc::new(fresh_songs);
+            let grid = gtk::Grid::new();
+            grid.set_column_homogeneous(true);
+            grid.set_column_spacing(2);
+            grid.set_row_spacing(2);
+            for index in 0..fresh.len() {
+                let button = catalog_song_result_button(actions, &fresh, index);
+                button.set_hexpand(true);
+                grid.attach(&button, index as i32 % 2, index as i32 / 2, 1, 1);
+            }
+            container.append(&grid);
+            // Si el artista ya encabeza la sección, repetir el enlace sobra.
+            if headliner.as_ref().is_none_or(|a| a.id != lead.artist_id) {
+                container.append(&see_more_artist(
+                    actions,
+                    &lead.artist_id,
+                    &lead.artist_name,
+                ));
+            }
+            shown += fresh.len();
+        }
+
+        if !fresh_albums.is_empty() {
+            container.append(&section("Álbumes en Apple Music"));
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-            for artist in &fresh_artists {
+            for album in &fresh_albums {
+                row.append(&album_card_button(actions, album));
+            }
+            container.append(&carousel(&row));
+            shown += fresh_albums.len();
+        }
+
+        if !other_artists.is_empty() {
+            container.append(&section("Otros artistas"));
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+            for artist in &other_artists {
                 row.append(&artist_card_button(actions, artist));
             }
             container.append(&carousel(&row));
-            shown += fresh_artists.len();
+            shown += other_artists.len();
         }
     } else {
         container.append(&pending_label("Buscando en Apple Music…"));
@@ -331,6 +365,13 @@ fn render(actions: &Actions, container: &gtk::Box, data: &Rc<RefCell<SearchData>
         note.set_xalign(0.0);
         note.add_css_class("muted-small");
         container.append(&note);
+    }
+
+    // La biblioteca va después del catálogo: primero lo que se puede escuchar
+    // desde Apple Music y luego lo que ya tienes guardado.
+    match &library {
+        Some(results) => shown += render_library(actions, container, results),
+        None => container.append(&pending_label("Buscando en tu biblioteca…")),
     }
 
     if shown == 0 && library.is_some() && catalog.is_some() && !catalog_failed {
@@ -345,7 +386,7 @@ fn render_library(actions: &Actions, container: &gtk::Box, results: &SearchResul
     let mut shown = 0usize;
 
     if !results.songs.is_empty() {
-        container.append(&section("Canciones"));
+        container.append(&section("Canciones en tu biblioteca"));
         let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
         for song in results.songs.iter().take(25) {
             list.append(&song_result_button(actions, song));
@@ -355,7 +396,7 @@ fn render_library(actions: &Actions, container: &gtk::Box, results: &SearchResul
     }
 
     if !results.albums.is_empty() {
-        container.append(&section("Álbumes"));
+        container.append(&section("Álbumes en tu biblioteca"));
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         for album in results.albums.iter().take(10) {
             row.append(&album_card_button(actions, album));
@@ -365,7 +406,7 @@ fn render_library(actions: &Actions, container: &gtk::Box, results: &SearchResul
     }
 
     if !results.artists.is_empty() {
-        container.append(&section("Artistas"));
+        container.append(&section("Artistas en tu biblioteca"));
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         for artist in results.artists.iter().take(10) {
             row.append(&artist_card_button(actions, artist));
@@ -375,7 +416,7 @@ fn render_library(actions: &Actions, container: &gtk::Box, results: &SearchResul
     }
 
     if !results.playlists.is_empty() {
-        container.append(&section("Playlists"));
+        container.append(&section("Playlists en tu biblioteca"));
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         for playlist in results.playlists.iter().take(8) {
             row.append(&playlist_card_button(actions, playlist));
@@ -392,6 +433,73 @@ fn section(title: &str) -> gtk::Widget {
     label.set_xalign(0.0);
     label.add_css_class("h2");
     label.upcast()
+}
+
+/// Enlace bajo los resultados del catálogo que abre el perfil del artista.
+/// Funciona también con artistas que no están en la biblioteca: la ficha se
+/// carga entonces desde Apple Music.
+fn see_more_artist(actions: &Actions, artist_id: &str, artist_name: &str) -> gtk::Widget {
+    let button = gtk::Button::new();
+    button.add_css_class("link-button");
+    button.set_halign(gtk::Align::Start);
+    button.set_margin_top(4);
+    let label = gtk::Label::new(Some(&format!("Ver más de {artist_name}")));
+    label.set_xalign(0.0);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_max_width_chars(46);
+    button.set_child(Some(&label));
+    let actions = actions.clone();
+    let artist_id = artist_id.to_string();
+    button.connect_clicked(move |_| actions.open_artist(&artist_id));
+    button.upcast()
+}
+
+/// Ficha del artista más relevante de la búsqueda. Va antes que las canciones
+/// y se pulsa entera para abrir su perfil.
+fn featured_artist_button(actions: &Actions, artist: &Artist) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.add_css_class("song-result");
+
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
+    row.set_margin_top(8);
+    row.set_margin_bottom(8);
+    row.set_margin_start(8);
+    row.set_margin_end(16);
+    row.append(&artist_avatar(actions, artist, 84));
+
+    let labels = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    labels.set_valign(gtk::Align::Center);
+    labels.set_hexpand(true);
+    let eyebrow = gtk::Label::new(Some("ARTISTA"));
+    eyebrow.set_xalign(0.0);
+    eyebrow.add_css_class("eyebrow");
+    let name = gtk::Label::new(Some(&artist.name));
+    name.set_xalign(0.0);
+    name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    name.add_css_class("h2");
+    let meta = gtk::Label::new(Some(&format!(
+        "{} · {}",
+        artist.genre,
+        plural(artist.album_count as usize, "álbum", "álbumes")
+    )));
+    meta.set_xalign(0.0);
+    meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    meta.add_css_class("muted");
+    labels.append(&eyebrow);
+    labels.append(&name);
+    labels.append(&meta);
+    row.append(&labels);
+
+    let chevron = gtk::Image::from_icon_name("go-next-symbolic");
+    chevron.add_css_class("chevron");
+    chevron.set_valign(gtk::Align::Center);
+    row.append(&chevron);
+
+    button.set_child(Some(&row));
+    let actions = actions.clone();
+    let id = artist.id.clone();
+    button.connect_clicked(move |_| actions.open_artist(&id));
+    button
 }
 
 fn pending_label(text: &str) -> gtk::Widget {

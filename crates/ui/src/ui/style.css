@@ -454,6 +454,11 @@ headerbar windowtitle {
   text-decoration: underline;
 }
 
+.chevron {
+  color: rgba(245, 245, 247, 0.42);
+  -gtk-icon-size: 16px;
+}
+
 .empty-state {
   color: rgba(245, 245, 247, 0.58);
   font-size: 14px;

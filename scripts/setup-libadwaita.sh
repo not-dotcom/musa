@@ -31,5 +31,5 @@ rpm2cpio "$RPM" | cpio -idm --quiet -D "$SYSROOT"
 # El .pc original apunta a /usr; lo redirigimos al prefijo del proyecto.
 sed -i "s|^prefix=.*|prefix=$PREFIX|" "$PC"
 echo "Listo. Usa:"
-echo "  export PKG_CONFIG_PATH=\"$PREFIX/lib64/pkgconfig\${PKG_CONFIG_PATH:+:\$PKG_CONFIG_PATH}\""
+echo "  export PKG_CONFIG_PATH=\"$PREFIX/lib64/pkgconfig\""
 PKG_CONFIG_PATH="$PREFIX/lib64/pkgconfig" pkg-config --modversion libadwaita-1 gtk4

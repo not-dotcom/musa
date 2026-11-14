@@ -53,7 +53,7 @@ Salida: `{"v":1,"id":1,"ok":true,"data":{...}}` o
 Eventos: `engine.ready`, `engine.error`, `engine.idle`, `engine.stopped`.
 
 Comandos: `hello`, `show-login-window`, `session`, `library`, `search`,
-`catalog-album`, `catalog-artist`, `follow-artist`, `add-album`, `lyrics`,
+`catalog-album`, `catalog-artist`, `catalog-playlist`, `follow-artist`, `add-album`, `lyrics`,
 `set-queue` (`song_ids`, `index`, `play`), `play`, `pause`, `next`, `prev`,
 `seek` (`position_ms`), `shuffle`, `repeat`, `volume` (0-100), `state`,
 `shutdown`.

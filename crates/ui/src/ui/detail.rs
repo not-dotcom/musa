@@ -1,13 +1,15 @@
 //! Páginas de detalle: álbum, playlist y artista.
 
-use musa_protocol::{Album, AlbumDetail, Artist, ArtistDetail, Playlist, Song};
+use musa_protocol::{
+    Album, AlbumDetail, Artist, ArtistDetail, CatalogResults, Playlist, PlaylistDetail, Song,
+};
 use relm4::gtk;
 use relm4::gtk::prelude::*;
 
 use super::Actions;
 use super::widgets::{
     album_card_button, collection_summary, cover_picture, heart_button, icon_pill_button,
-    page_scroll, set_heart, song_rows,
+    page_scroll, playlist_card_button, set_heart, song_rows,
 };
 
 impl Actions {
@@ -37,16 +39,74 @@ impl Actions {
 
     pub fn open_playlist(&self, id: &str) {
         *self.pending_detail.borrow_mut() = None;
-        let playlist = self.data.borrow().playlist(id).cloned();
-        let Some(playlist) = playlist else {
-            self.toast("Playlist no encontrada");
-            return;
-        };
-        let page = playlist_detail(self, &playlist);
-        self.open_detail(&page, &playlist.name);
+        let library_playlist = self.data.borrow().playlist(id).cloned();
+        match library_playlist {
+            Some(playlist) => {
+                let data = self.data.borrow();
+                let songs: Vec<Song> = playlist
+                    .song_ids
+                    .iter()
+                    .filter_map(|id| data.song(id).cloned())
+                    .collect();
+                drop(data);
+                let page = playlist_detail(self, &playlist, &songs, true);
+                self.open_detail(&page, &playlist.name);
+            }
+            // Playlist de Apple Music (perfil de un artista): se pide al
+            // catálogo como los álbumes.
+            None => self.open_catalog_playlist(id),
+        }
+    }
+
+    fn open_catalog_playlist(&self, id: &str) {
+        let key = format!("playlist:{id}");
+        *self.pending_detail.borrow_mut() = Some(key.clone());
+        self.open_detail(&loading_page("Cargando playlist…"), "Playlist");
+        let actions = self.clone();
+        self.client.call(
+            musa_protocol::cmd::CATALOG_PLAYLIST,
+            serde_json::json!({"id": id}),
+            move |result| {
+                if actions.pending_detail.borrow().as_deref() != Some(key.as_str()) {
+                    return;
+                }
+                *actions.pending_detail.borrow_mut() = None;
+                let detail = result.map_err(|_| ()).and_then(|value| {
+                    serde_json::from_value::<PlaylistDetail>(value).map_err(|_| ())
+                });
+                match detail {
+                    Ok(detail) => {
+                        let page =
+                            playlist_detail(&actions, &detail.playlist, &detail.songs, false);
+                        actions.open_detail(&page, &detail.playlist.name);
+                    }
+                    Err(_) => {
+                        actions.back();
+                        actions.toast("No se pudo abrir la playlist. Inténtalo de nuevo.");
+                    }
+                }
+            },
+        );
     }
 
     pub fn open_artist(&self, id: &str) {
+        // El perfil de la biblioteca solo contiene lo guardado en Musa y puede
+        // quedar incompleto: siempre se abre la ficha de Apple Music y la local
+        // se reserva como respaldo.
+        let local = self.data.borrow().artist(id).cloned();
+        match local {
+            Some(artist) if is_synthetic_artist_id(&artist.id) => {
+                self.open_catalog_artist_by_name(&artist.id, &artist.name);
+            }
+            Some(artist) => self.load_catalog_artist(&artist.id, Some(&artist.id)),
+            None => self.load_catalog_artist(id, None),
+        }
+    }
+
+    /// Ficha local de un artista: solo sus álbumes y canciones de la
+    /// biblioteca. Se usa cuando Apple Music no tiene (o no devuelve) al
+    /// artista.
+    fn open_local_artist(&self, id: &str) {
         let data = self.data.borrow();
         let artist = data.artist(id).cloned();
         let albums: Vec<Album> = artist
@@ -71,19 +131,31 @@ impl Actions {
                     .collect()
             })
             .unwrap_or_default();
+        // Playlists de la biblioteca que incluyen alguna canción del artista.
+        let playlists: Vec<Playlist> = artist
+            .as_ref()
+            .map(|artist| {
+                let ids: std::collections::HashSet<&str> = songs
+                    .iter()
+                    .filter(|song| song.artist_id == artist.id)
+                    .map(|song| song.id.as_str())
+                    .collect();
+                data.snapshot
+                    .playlists
+                    .iter()
+                    .filter(|playlist| playlist.song_ids.iter().any(|id| ids.contains(id.as_str())))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
         drop(data);
         let Some(artist) = artist else {
-            self.open_catalog_artist(id);
+            self.back();
+            self.toast("Artista no encontrado");
             return;
         };
-        // Un artista seguido no tiene canciones ni álbumes propios en la
-        // biblioteca: su ficha se completa con el catálogo.
-        if artist.followed && albums.is_empty() && songs.is_empty() {
-            self.open_catalog_artist(&artist.id);
-            return;
-        }
         *self.pending_detail.borrow_mut() = None;
-        let page = artist_detail(self, &artist, &albums, &songs);
+        let page = artist_detail(self, &artist, &albums, &songs, &playlists);
         self.open_detail(&page, &artist.name);
     }
 
@@ -119,11 +191,14 @@ impl Actions {
         );
     }
 
-    fn open_catalog_artist(&self, id: &str) {
+    /// Pide al catálogo la ficha del artista. `fallback` es el id local que se
+    /// pinta si Apple no devuelve al artista (sin conexión, por ejemplo).
+    fn load_catalog_artist(&self, id: &str, fallback: Option<&str>) {
         let key = format!("artist:{id}");
         *self.pending_detail.borrow_mut() = Some(key.clone());
         self.open_detail(&loading_page("Cargando artista…"), "Artista");
         let actions = self.clone();
+        let fallback = fallback.map(|id| id.to_string());
         self.client.call(
             musa_protocol::cmd::CATALOG_ARTIST,
             serde_json::json!({"id": id}),
@@ -137,18 +212,82 @@ impl Actions {
                 });
                 match detail {
                     Ok(detail) => {
-                        let page =
-                            artist_detail(&actions, &detail.artist, &detail.albums, &detail.songs);
+                        let page = artist_detail(
+                            &actions,
+                            &detail.artist,
+                            &detail.albums,
+                            &detail.songs,
+                            &detail.playlists,
+                        );
                         actions.open_detail(&page, &detail.artist.name);
                     }
-                    Err(_) => {
-                        actions.back();
-                        actions.toast("No se pudo abrir el artista. Inténtalo de nuevo.");
-                    }
+                    Err(_) => match fallback {
+                        Some(local_id) => actions.open_local_artist(&local_id),
+                        None => {
+                            actions.back();
+                            actions.toast("No se pudo abrir el artista. Inténtalo de nuevo.");
+                        }
+                    },
                 }
             },
         );
     }
+
+    /// Los artistas de la biblioteca llevan ids sintéticos (`artist-lib-…`)
+    /// que Apple no reconoce. Se resuelve el id real del catálogo buscando por
+    /// nombre y, si no aparece, se queda la ficha local.
+    fn open_catalog_artist_by_name(&self, local_id: &str, name: &str) {
+        let key = format!("artist-name:{local_id}");
+        *self.pending_detail.borrow_mut() = Some(key.clone());
+        self.open_detail(
+            &loading_page("Buscando al artista en Apple Music…"),
+            "Artista",
+        );
+        let actions = self.clone();
+        let name = name.to_string();
+        let local_id = local_id.to_string();
+        self.client.call(
+            musa_protocol::cmd::SEARCH_CATALOG,
+            serde_json::json!({"query": name.clone(), "limit": 20}),
+            move |result| {
+                if actions.pending_detail.borrow().as_deref() != Some(key.as_str()) {
+                    return;
+                }
+                *actions.pending_detail.borrow_mut() = None;
+                let found = result
+                    .ok()
+                    .and_then(|value| serde_json::from_value::<CatalogResults>(value).ok())
+                    .and_then(|results| {
+                        results
+                            .artists
+                            .into_iter()
+                            .find(|candidate| same_artist_name(&candidate.name, &name))
+                    });
+                match found {
+                    Some(artist) => actions.load_catalog_artist(&artist.id, Some(&local_id)),
+                    None => actions.open_local_artist(&local_id),
+                }
+            },
+        );
+    }
+}
+
+/// Los ids de artista de la biblioteca son hashes locales, no ids de Apple.
+fn is_synthetic_artist_id(id: &str) -> bool {
+    id.starts_with("artist-")
+}
+
+/// Compara nombres de artista ignorando mayúsculas, acentos y puntuación:
+/// Apple y la biblioteca no siempre los escriben igual.
+fn same_artist_name(left: &str, right: &str) -> bool {
+    fn normalize(name: &str) -> String {
+        name.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(|c| c.to_lowercase())
+            .collect()
+    }
+    let normalized = normalize(right);
+    !normalized.is_empty() && normalize(left) == normalized
 }
 
 fn loading_page(message: &str) -> gtk::Widget {
@@ -438,15 +577,13 @@ fn album_detail(actions: &Actions, album: &Album, songs: &[Song]) -> gtk::Widget
     layout.upcast()
 }
 
-fn playlist_detail(actions: &Actions, playlist: &Playlist) -> gtk::Widget {
-    let data = actions.data.borrow();
-    let songs: Vec<Song> = playlist
-        .song_ids
-        .iter()
-        .filter_map(|id| data.song(id).cloned())
-        .collect();
+fn playlist_detail(
+    actions: &Actions,
+    playlist: &Playlist,
+    songs: &[Song],
+    is_local: bool,
+) -> gtk::Widget {
     let total: u64 = songs.iter().map(|s| s.duration_ms).sum();
-    drop(data);
 
     let layout = gtk::Box::new(gtk::Orientation::Vertical, 0);
     layout.append(&detail_top(actions));
@@ -475,11 +612,12 @@ fn playlist_detail(actions: &Actions, playlist: &Playlist) -> gtk::Widget {
     description.set_wrap(true);
     description.set_max_width_chars(70);
     description.add_css_class("muted");
+    description.set_visible(!playlist.description.is_empty());
     let meta = gtk::Label::new(Some(&format!(
-        "{} · {} · {}",
+        "{} · {}{}",
         playlist.curator,
         collection_summary(songs.len(), total),
-        "selección Musa"
+        if is_local { " · selección Musa" } else { "" }
     )));
     meta.set_xalign(0.0);
     meta.add_css_class("muted-small");
@@ -487,11 +625,11 @@ fn playlist_detail(actions: &Actions, playlist: &Playlist) -> gtk::Widget {
     buttons.set_margin_top(8);
     let play = icon_pill_button("Reproducir", "media-playback-start-symbolic");
     play.add_css_class("suggested-action");
-    let songs_play = songs.clone();
+    let songs_play = songs.to_vec();
     let actions_play = actions.clone();
     play.connect_clicked(move |_| actions_play.play_songs(&songs_play, 0));
     let shuffle = icon_pill_button("Aleatorio", "media-playlist-shuffle-symbolic");
-    let songs_shuffle = songs.clone();
+    let songs_shuffle = songs.to_vec();
     let actions_shuffle = actions.clone();
     shuffle.connect_clicked(move |_| {
         let mut shuffled = songs_shuffle.clone();
@@ -500,12 +638,16 @@ fn playlist_detail(actions: &Actions, playlist: &Playlist) -> gtk::Widget {
     });
     buttons.append(&play);
     buttons.append(&shuffle);
-    buttons.append(&favorite_button(
-        actions,
-        "playlist",
-        &playlist.id,
-        playlist.favorite,
-    ));
+    // Los favoritos son de la biblioteca: una playlist de Apple Music no se
+    // puede marcar hasta que esté en ella.
+    if is_local {
+        buttons.append(&favorite_button(
+            actions,
+            "playlist",
+            &playlist.id,
+            playlist.favorite,
+        ));
+    }
     info.append(&eyebrow);
     info.append(&title);
     info.append(&description);
@@ -519,7 +661,7 @@ fn playlist_detail(actions: &Actions, playlist: &Playlist) -> gtk::Widget {
     separator.set_margin_start(26);
     separator.set_margin_end(26);
     body.append(&separator);
-    body.append(&song_rows(actions, &songs, false, true, true));
+    body.append(&song_rows(actions, songs, false, true, is_local));
     layout.append(&page_scroll(&body));
     layout.upcast()
 }
@@ -529,6 +671,7 @@ fn artist_detail(
     artist: &Artist,
     albums: &[Album],
     songs: &[Song],
+    playlists: &[Playlist],
 ) -> gtk::Widget {
     let local_artist = {
         let data = actions.data.borrow();
@@ -645,6 +788,29 @@ fn artist_detail(
         songs_title.set_margin_top(6);
         body.append(&songs_title);
         body.append(&song_rows(actions, songs, true, false, songs_in_library));
+    }
+
+    // Las playlists van al final, después de la discografía y las canciones.
+    if !playlists.is_empty() {
+        let lists_title = gtk::Label::new(Some("Playlists"));
+        lists_title.set_xalign(0.0);
+        lists_title.add_css_class("h2");
+        lists_title.set_margin_start(30);
+        lists_title.set_margin_top(10);
+        body.append(&lists_title);
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        row.set_margin_start(18);
+        row.set_margin_end(18);
+        row.set_margin_bottom(16);
+        for playlist in playlists {
+            row.append(&playlist_card_button(actions, playlist));
+        }
+        let lists_scroll = gtk::ScrolledWindow::new();
+        lists_scroll.set_policy(gtk::PolicyType::External, gtk::PolicyType::Never);
+        lists_scroll.set_propagate_natural_height(true);
+        lists_scroll.add_css_class("carousel");
+        lists_scroll.set_child(Some(&row));
+        body.append(&lists_scroll);
     }
     layout.append(&page_scroll(&body));
     layout.upcast()

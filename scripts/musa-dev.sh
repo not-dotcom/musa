@@ -17,7 +17,7 @@ if pgrep -x musa >/dev/null 2>&1; then
     exit 0
 fi
 
-export PKG_CONFIG_PATH="$PREFIX/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export PKG_CONFIG_PATH="$PREFIX/lib64/pkgconfig"
 cd "$ROOT"
 
 # El lanzador puede heredar un PATH sin ~/.cargo/bin (Fuzzel arrancado desde el

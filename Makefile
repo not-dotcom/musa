@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 PREFIX := $(CURDIR)/.deps/sysroot/usr
-PKG_ENV := PKG_CONFIG_PATH=$(PREFIX)/lib64/pkgconfig$${PKG_CONFIG_PATH:+:$$PKG_CONFIG_PATH}
+PKG_ENV := PKG_CONFIG_PATH=$(PREFIX)/lib64/pkgconfig
 
 .PHONY: setup build test fmt clippy run measure clean
 

@@ -381,6 +381,11 @@ function cleanArtist(artist) {
   return rest;
 }
 
+function cleanPlaylist(playlist) {
+  const { _artwork, ...rest } = playlist;
+  return rest;
+}
+
 function catalogAlbumFrom(item) {
   const attrs = item.attributes || {};
   const relArtist =
@@ -428,6 +433,26 @@ function catalogSongFrom(attrs, rawId, albumId, artistId) {
   if (albumId) song.album_id = String(albumId);
   if (artistId) song.artist_id = String(artistId);
   return song;
+}
+
+// Playlist del catálogo. Apple guarda la descripción como `{standard, short}`;
+// en Musa es texto plano.
+function catalogPlaylistFrom(item) {
+  const attrs = item.attributes || {};
+  const tracks =
+    (item.relationships && item.relationships.tracks && item.relationships.tracks.data) || [];
+  return {
+    id: String(item.id || ''),
+    name: attrs.name || 'Playlist',
+    description:
+      (attrs.description && (attrs.description.standard || attrs.description.short)) || '',
+    curator: attrs.curatorName || 'Apple Music',
+    cover_path: '',
+    track_count: attrs.trackCount || tracks.length || 0,
+    song_ids: tracks.map((track) => String(track.id)),
+    favorite: false,
+    _artwork: coverUrl(attrs),
+  };
 }
 
 function coverIn(covers, item) {
@@ -508,12 +533,13 @@ async function catalogAlbum(win, id, cacheRoot) {
   return { album: cleanAlbum(album), songs: songs.map(cleanSong) };
 }
 
-// Detalle de un artista del catálogo: sus álbumes y una lista de canciones
-// populares para poder escucharlo sin tener nada en la biblioteca.
+// Detalle de un artista del catálogo: sus álbumes, una lista de canciones
+// populares para poder escucharlo sin tener nada en la biblioteca y las
+// playlists de Apple Music en las que aparece.
 async function catalogArtist(win, id, cacheRoot) {
   const t = await tokens(win);
   const store = encodeURIComponent(t.store);
-  const [page, top] = await Promise.all([
+  const [page, top, lists] = await Promise.all([
     apiJson(
       t,
       `/catalog/${store}/artists/${encodeURIComponent(id)}?include=albums&limit%5Balbums%5D=50`,
@@ -521,6 +547,10 @@ async function catalogArtist(win, id, cacheRoot) {
     apiJson(
       t,
       `/catalog/${store}/artists/${encodeURIComponent(id)}/view/top-songs?limit=20`,
+    ).catch(() => ({ data: [] })),
+    apiJson(
+      t,
+      `/catalog/${store}/artists/${encodeURIComponent(id)}/playlists?limit=10`,
     ).catch(() => ({ data: [] })),
   ]);
   const item = page.data && page.data[0];
@@ -539,12 +569,14 @@ async function catalogArtist(win, id, cacheRoot) {
       catalogSongFrom(songItem.attributes || {}, songItem.id, null, artist.id),
     )
     .filter(Boolean);
+  const playlists = ((lists && lists.data) || []).slice(0, 10).map(catalogPlaylistFrom);
 
   const covers = await downloadCovers(
     [
       artist._artwork,
       ...albums.map((a) => a._artwork),
       ...songs.map((s) => s._artwork),
+      ...playlists.map((p) => p._artwork),
     ],
     cacheRoot,
   );
@@ -557,11 +589,48 @@ async function catalogArtist(win, id, cacheRoot) {
   for (const song of songs) {
     song.cover_path = coverIn(covers, song) || firstAlbumCover;
   }
+  for (const playlist of playlists) {
+    playlist.cover_path = coverIn(covers, playlist) || firstAlbumCover;
+  }
   artist.album_count = albums.length;
   artist.song_count = songs.length;
   return {
     artist: cleanArtist(artist),
     albums: albums.map(cleanAlbum),
+    songs: songs.map(cleanSong),
+    playlists: playlists.map(cleanPlaylist),
+  };
+}
+
+// Detalle de una playlist del catálogo con sus canciones, para poder abrirla
+// desde el perfil de un artista sin tenerla en la biblioteca.
+async function catalogPlaylist(win, id, cacheRoot) {
+  const t = await tokens(win);
+  const store = encodeURIComponent(t.store);
+  const page = await apiJson(
+    t,
+    `/catalog/${store}/playlists/${encodeURIComponent(id)}?include=tracks&limit%5Btracks%5D=100`,
+  );
+  const item = page.data && page.data[0];
+  if (!item) throw new Error('playlist no encontrada');
+  const playlist = catalogPlaylistFrom(item);
+  const trackItems =
+    (item.relationships && item.relationships.tracks && item.relationships.tracks.data) || [];
+  const songs = trackItems
+    .map((track) => catalogSongFrom(track.attributes || {}, track.id, null, null))
+    .filter(Boolean);
+  playlist.track_count = playlist.track_count || songs.length;
+
+  const covers = await downloadCovers(
+    [playlist._artwork, ...songs.map((s) => s._artwork)],
+    cacheRoot,
+  );
+  playlist.cover_path = coverIn(covers, playlist);
+  for (const song of songs) {
+    song.cover_path = coverIn(covers, song) || playlist.cover_path;
+  }
+  return {
+    playlist: cleanPlaylist(playlist),
     songs: songs.map(cleanSong),
   };
 }
@@ -653,6 +722,7 @@ module.exports = {
   search,
   catalogAlbum,
   catalogArtist,
+  catalogPlaylist,
   followArtist,
   addAlbum,
   lyrics,

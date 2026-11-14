@@ -13,8 +13,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use musa_protocol::{
     Album, AlbumChange, AlbumDetail, Artist, ArtistChange, ArtistDetail, CatalogResults, Event,
-    Favorites, Hello, Lyrics, PlayerState, Playlist, ProtocolError, RepeatMode, Request, Response,
-    SearchResults, Song, cmd, encode_line, event, parse_request, to_json,
+    Favorites, Hello, Lyrics, PlayerState, Playlist, PlaylistDetail, ProtocolError, RepeatMode,
+    Request, Response, SearchResults, Song, cmd, encode_line, event, parse_request, to_json,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -617,6 +617,7 @@ fn is_catalog_command(name: &str) -> bool {
     name == cmd::SEARCH_CATALOG
         || name == cmd::CATALOG_ALBUM
         || name == cmd::CATALOG_ARTIST
+        || name == cmd::CATALOG_PLAYLIST
         || name == cmd::LIBRARY_ADD_ARTIST
         || name == cmd::LIBRARY_ADD_ALBUM
 }
@@ -1088,6 +1089,20 @@ fn dispatch(
                 "catalog_artist",
             )?;
             let detail: ArtistDetail = serde_json::from_value(value)
+                .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
+            remember_song_covers(state, &detail.songs);
+            Ok(to_json(&detail))
+        }
+        cmd::CATALOG_PLAYLIST => {
+            let params: IdParams = musa_protocol::params(req)?;
+            let value = catalog_call(
+                state,
+                "catalog-playlist",
+                json!({"id": params.id}),
+                Duration::from_secs(25),
+                "catalog_playlist",
+            )?;
+            let detail: PlaylistDetail = serde_json::from_value(value)
                 .map_err(|e| ProtocolError::new("catalog_json", e.to_string()))?;
             remember_song_covers(state, &detail.songs);
             Ok(to_json(&detail))

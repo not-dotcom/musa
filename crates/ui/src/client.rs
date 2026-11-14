@@ -98,8 +98,11 @@ impl Client {
         let request = Request::new(id, command, params);
         if self.outgoing.send(encode_line(&request)).is_err() {
             self.online.set(false);
-            if let Some(cb) = self.pending.borrow_mut().remove(&id) {
-                cb(Err(ProtocolError::new("closed", "daemon desconectado")));
+            // Igual que en `pump`: se suelta el préstamo antes de llamar al
+            // callback, que podría encadenar otra petición.
+            let callback = self.pending.borrow_mut().remove(&id);
+            if let Some(callback) = callback {
+                callback(Err(ProtocolError::new("closed", "daemon desconectado")));
             }
         }
     }
@@ -119,7 +122,12 @@ impl Client {
             let Some(incoming) = next else { break };
             match incoming {
                 Incoming::Response(id, result) => {
-                    if let Some(callback) = self.pending.borrow_mut().remove(&id) {
+                    // El callback se saca antes de ejecutarlo: puede lanzar una
+                    // petición nueva (`Client::call`) y eso volvería a pedir
+                    // prestado `pending`, lo que haría panic con el préstamo
+                    // aún vivo.
+                    let callback = self.pending.borrow_mut().remove(&id);
+                    if let Some(callback) = callback {
                         callback(result);
                     }
                 }

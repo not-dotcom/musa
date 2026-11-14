@@ -151,6 +151,8 @@ pub mod cmd {
     pub const CATALOG_ALBUM: &str = "catalog.album";
     /// Detalle de un artista del catálogo: `{artist, albums, songs}`.
     pub const CATALOG_ARTIST: &str = "catalog.artist";
+    /// Detalle de una playlist del catálogo: `{playlist, songs}`.
+    pub const CATALOG_PLAYLIST: &str = "catalog.playlist";
     pub const LYRICS_GET: &str = "lyrics.get";
     pub const COVER_ENSURE: &str = "cover.ensure";
     pub const QUEUE_SET: &str = "queue.set";
@@ -366,6 +368,16 @@ pub struct AlbumDetail {
 pub struct ArtistDetail {
     pub artist: Artist,
     pub albums: Vec<Album>,
+    pub songs: Vec<Song>,
+    /// Playlists de Apple Music que incluyen al artista.
+    #[serde(default)]
+    pub playlists: Vec<Playlist>,
+}
+
+/// Detalle de una playlist del catálogo. Misma forma que `playlist.get`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaylistDetail {
+    pub playlist: Playlist,
     pub songs: Vec<Song>,
 }
 

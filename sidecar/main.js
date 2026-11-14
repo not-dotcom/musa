@@ -264,6 +264,13 @@ async function handle(request) {
           path.join(os.homedir(), '.cache/musa'),
         );
         break;
+      case 'catalog-playlist':
+        data = await apple.catalogPlaylist(
+          window,
+          String(params.id || ''),
+          path.join(os.homedir(), '.cache/musa'),
+        );
+        break;
       case 'follow-artist':
         data = await apple.followArtist(window, String(params.id || ''));
         break;
