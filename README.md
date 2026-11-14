@@ -1,107 +1,108 @@
 <p align="center">
-  <img src="data/io.github.juliogarcia.Musa.svg" alt="Musa, un ratoncito gris y negro" width="88" height="88">
+  <img src="data/io.github.juliogarcia.Musa.svg" alt="Musa, a small grey and black mouse" width="88" height="88">
 </p>
 
 <h1 align="center">Musa</h1>
 
-<p align="center"><strong>Apple Music, nativo en Linux.</strong><br>Un cliente de escritorio escrito en Rust con GTK4, libadwaita y relm4.</p>
+<p align="center"><strong>Apple Music, native on Linux.</strong><br>A desktop client written in Rust with GTK4, libadwaita and relm4.</p>
 
 <p align="center">
-  <a href="#empezar"><strong>Empezar</strong></a> ·
-  <a href="#capturas">Capturas</a> ·
-  <a href="#arquitectura">Arquitectura</a> ·
-  <a href="#contribuir">Contribuir</a>
+  <a href="#getting-started"><strong>Get started</strong></a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
-  <a href="Cargo.toml"><img src="https://img.shields.io/badge/Hecho_con-Rust-fa2d48" alt="Hecho con Rust"></a>
-  <a href="#instalar"><img src="https://img.shields.io/badge/GTK4_%C2%B7_libadwaita-24292f" alt="GTK4 y libadwaita"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/Licencia-MIT-fa2d48" alt="Licencia MIT"></a>
+  <a href="Cargo.toml"><img src="https://img.shields.io/badge/Made_with-Rust-fa2d48" alt="Made with Rust"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/GTK4_%C2%B7_libadwaita-24292f" alt="GTK4 and libadwaita"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-fa2d48" alt="MIT License"></a>
 </p>
 
-Musa es un cliente de **Apple Music para Linux** con una interfaz nativa: la
-ventana, las listas virtuales, las portadas y el reproductor están hechos en
-Rust con GTK4, libadwaita y relm4. El catálogo y la reproducción vienen de tu
-cuenta de Apple Music a través de un sidecar local con MusicKit y Widevine.
+Musa is an **Apple Music client for Linux** with a native interface: the window,
+the virtual lists, the artwork and the player are built in Rust with GTK4,
+libadwaita and relm4. The catalog and playback come from your Apple Music
+account through a local sidecar running MusicKit and Widevine.
 
-La idea es simple: **instalas Musa, lo abres, inicias sesión en Apple Music y
-tu biblioteca aparece.**
+The idea is simple: **install Musa, open it, sign in to Apple Music and your
+library shows up.**
 
-El nombre también es un guiño: ***mus*** es ratón en latín, y de ahí el ratoncito
-gris y negro de la marca.
+The name is also a wink: ***mus*** is mouse in Latin, hence the little grey and
+black mouse in the logo.
 
-> Proyecto independiente. No está afiliado ni patrocinado por Apple. «Apple
-> Music» es una marca de Apple Inc.; aquí solo se describe interoperabilidad.
+> Independent project. Not affiliated with or endorsed by Apple. «Apple Music»
+> is a trademark of Apple Inc.; interoperability is the only thing described
+> here.
 
-**Necesitas una suscripción de Apple Music para reproducir.** El inicio de
-sesión y la biblioteca se gestionan en la ventana de Apple; Musa nunca pide ni
-guarda tu contraseña.
+**You need an Apple Music subscription to play music.** Sign-in and the library
+are handled in Apple's own window; Musa never asks for or stores your password.
 
-![Inicio de Musa con la mezcla personal, las novedades y el reproductor persistente](docs/screenshots/home.webp)
+![Musa home with the personal mix, new releases and the persistent player](docs/screenshots/home.webp)
 
-[Funciones](#funciones) · [Instalar](#instalar) · [Primera sesión](#primera-sesion) · [Arquitectura](#arquitectura) · [Capturas](#capturas)
+[Features](#features) · [Install](#install) · [First session](#first-session) · [Architecture](#architecture) · [Screenshots](#screenshots)
 
-## Funciones
+## Features
 
-| Función | Qué puedes hacer |
+| Feature | What you can do |
 |---|---|
-| **Tu biblioteca** | Canciones, álbumes, artistas y playlists de tu cuenta de Apple Music, con listas virtuales y búsqueda local por título, artista, álbum o género. |
-| **Búsqueda en el catálogo** | Además de tu biblioteca, busca canciones, álbumes y artistas en todo Apple Music; puedes abrir sus fichas y reproducirlos aunque no los tengas. |
-| **Artistas seguidos** | Añade a tu biblioteca artistas que aún no tienes: aparecen en **Artistas** e **Inicio** y su ficha se completa con los álbumes y canciones populares del catálogo. El guardado es local; la sincronización con Apple Music es best-effort. |
-| **Álbumes a la biblioteca** | Añade un disco completo del catálogo con sus canciones. Se guarda en Musa al instante y se intenta reflejar en tu biblioteca de Apple Music. |
-| **Inicio y Escuchar ahora** | Mezcla personal, novedades de tu biblioteca y un hub editorial con mezclas, favoritas, playlists y artistas. |
-| **Reproductor persistente** | Portada, título y artista, anterior, reproducir/pausar, siguiente, aleatorio, repetición, progreso, tiempos y volumen. Nunca desaparece. |
-| **Cola y letras** | Ver y saltar dentro de la cola; abrir las letras de Apple en una ventana propia con la línea actual resaltada y desplazada al centro. |
-| **Favoritos** | Marcar canciones, álbumes, artistas y playlists con un corazón de contorno gris o relleno rojo, con toast y **Deshacer**. Hoy se guardan en local. |
-| **Detalles** | Portada grande, acciones y lista de pistas. La portada y la cabecera se desplazan con la lista en un único scroll; «Volver» queda fijo. |
-| **Portadas** | El sidecar descarga las portadas de tu biblioteca y Musa las decodifica al tamaño real × `scale_factor`, con caché LRU de 16 MB y cuatro workers. |
-| **Escritorio** | Lanzador para Fuzzel, icono propio y cierre que pausa la reproducción y apaga el motor. |
+| **Your library** | Songs, albums, artists and playlists from your Apple Music account, with virtual lists and local search by title, artist, album or genre. |
+| **Catalog search** | Beyond your library, search songs, albums and artists across all of Apple Music; open their pages and play them even if you don't own them. |
+| **Followed artists** | Add artists you don't have yet: they show up in **Artists** and **Home**, and their page is filled in with the catalog's albums and popular songs. Saving is local; syncing with Apple Music is best-effort. |
+| **Albums to your library** | Add a whole catalog album with its songs. It is saved in Musa instantly and an attempt is made to mirror it in your Apple Music library. |
+| **Home and Listen Now** | Personal mix, new releases from your library and an editorial hub with mixes, favorites, playlists and artists. |
+| **Persistent player** | Artwork, title and artist, previous, play/pause, next, shuffle, repeat, progress, times and volume. It never goes away. |
+| **Queue and lyrics** | View the queue and jump around in it; open Apple's lyrics in their own window with the current line highlighted and scrolled to the center. |
+| **Favorites** | Mark songs, albums, artists and playlists with a grey outline heart or a filled red one, with a toast and **Undo**. For now they are stored locally. |
+| **Details** | Large artwork, actions and track list. The artwork and header scroll with the list in a single scroll; «Back» stays pinned. |
+| **Artwork** | The sidecar downloads your library's artwork and Musa decodes it at the real size × `scale_factor`, with a 16 MB LRU cache and four workers. |
+| **Desktop** | Fuzzel launcher, its own icon, and shutdown that pauses playback and turns the engine off. |
 
-<a id="arquitectura"></a>
+<a id="architecture"></a>
 
-## Cómo funciona
+## How it works
 
-La interfaz no guarda una copia de la biblioteca: el daemon `musad` es la única
-fuente de verdad. La UI conserva solo lo necesario para pintar y una caché de
-píxeles decodificados. El daemon habla con el sidecar Electron, el único proceso
-que abre MusicKit y Widevine y reproduce audio en PipeWire.
+The interface does not keep a copy of the library: the `musad` daemon is the
+single source of truth. The UI keeps only what it needs to draw plus a cache of
+decoded pixels. The daemon talks to the Electron sidecar, the only process that
+opens MusicKit and Widevine and plays audio through PipeWire.
 
 ```
-┌────────────────────────┐   JSON por líneas   ┌────────────────────────┐
-│  musa (GTK4/relm4)     │◄───────────────────►│  musad                 │
-│  UI, listas virtuales  │  socket Unix 0600   │  biblioteca, cola,     │
-│  caché LRU de portadas │                     │  favoritos, letras     │
-└────────────────────────┘                     └───────────┬────────────┘
-                                                           │ stdio JSON
-                                               ┌───────────▼────────────┐
-                                               │ sidecar Electron       │
-                                               │ MusicKit + Widevine    │
-                                               │ audio a PipeWire       │
-                                               └────────────────────────┘
+┌────────────────────────┐  newline-delimited JSON  ┌────────────────────────┐
+│  musa (GTK4/relm4)     │◄────────────────────────►│  musad                 │
+│  UI, virtual lists     │  Unix socket, mode 0600  │  library, queue,       │
+│  LRU artwork cache     │                          │  favorites, lyrics     │
+└────────────────────────┘                          └───────────┬────────────┘
+                                                                │ JSON over stdio
+                                                    ┌───────────▼────────────┐
+                                                    │ Electron sidecar       │
+                                                    │ MusicKit + Widevine    │
+                                                    │ audio to PipeWire      │
+                                                    └────────────────────────┘
 ```
 
-- **Sin caché de biblioteca en la UI**: el daemon conserva los modelos y el
-  sidecar cachea la última biblioteca de Apple para arrancar rápido.
-- **Al cerrar**: Musa pausa la reproducción y apaga el daemon/sidecar. No queda
-  música sonando en segundo plano.
-- **Favoritos locales**: el corazón actualiza la copia local; la sincronización
-  con Apple Music queda pendiente.
-- **Artistas seguidos locales**: se guardan en `artists.json` y se mezclan con
-  tu biblioteca al arrancar. Añadir un artista no descarga su discografía; su
-  ficha y sus canciones se leen del catálogo. La sincronización con Apple es
-  best-effort y quitarlo solo afecta a Musa.
-- **Álbumes añadidos locales**: se guardan en `albums.json` con sus canciones y
-  se mezclan con tu biblioteca al arrancar, para que sigan ahí aunque la caché
-  de Apple tarde en incluirlos.
-- El protocolo entre la UI y el daemon es JSON por líneas sobre un socket Unix.
+- **No library cache in the UI**: the daemon holds the models and the sidecar
+  caches the last Apple library so startup is fast.
+- **On close**: Musa pauses playback and shuts down the daemon/sidecar. No music
+  is left playing in the background.
+- **Local favorites**: the heart updates the local copy; syncing with Apple
+  Music is still pending.
+- **Local followed artists**: stored in `artists.json` and merged with your
+  library at startup. Adding an artist does not download their discography;
+  their page and songs are read from the catalog. Syncing with Apple is
+  best-effort and removing one only affects Musa.
+- **Locally added albums**: stored in `albums.json` with their songs and merged
+  with your library at startup, so they stay there even if Apple's cache takes
+  a while to include them.
+- The protocol between the UI and the daemon is newline-delimited JSON over a
+  Unix socket.
 
-## Instalar
+## Install
 
-Requisitos: Rust 1.85+ (edición 2024), GTK4 ≥ 4.14, libadwaita ≥ 1.5, un
-compilador de C, `pkg-config`, una cuenta de Apple Music y el Electron de
-castLabs con Widevine para el sidecar.
+Requirements: Rust 1.85+ (2024 edition), GTK4 ≥ 4.14, libadwaita ≥ 1.5, a C
+compiler, `pkg-config`, an Apple Music account and castLabs' Electron with
+Widevine for the sidecar.
 
-En Fedora:
+On Fedora:
 
 ```bash
 sudo dnf install gtk4-devel libadwaita-devel rust cargo
@@ -109,132 +110,132 @@ make build
 cd sidecar && npm install
 ```
 
-Si solo está el runtime de libadwaita, el script descarga **sin sudo** el RPM de
-desarrollo y lo extrae en `.deps/`:
+If only the libadwaita runtime is installed, the script downloads the
+development RPM **without sudo** and extracts it into `.deps/`:
 
 ```bash
 ./scripts/setup-libadwaita.sh
 make build
 ```
 
-| Quieres… | Haz esto |
+| You want to… | Do this |
 |---|---|
-| **Compilar** | `make build` |
-| **Instalar el sidecar** | `cd sidecar && npm install` (descarga el Electron con Widevine; es lo único pesado). |
-| **Usar otro Electron castLabs** | `export MUSA_ELECTRON=/ruta/al/electron` |
-| **Instalar el lanzador** | `./scripts/install-launcher.sh`; deja Musa en Fuzzel y actualiza el icono del ratoncito. |
-| **Abrir** | `./target/release/musa` |
-| **Ver los logs del daemon** | `./scripts/run.sh` |
+| **Build** | `make build` |
+| **Install the sidecar** | `cd sidecar && npm install` (downloads the Electron build with Widevine; it is the only heavy bit). |
+| **Use another castLabs Electron** | `export MUSA_ELECTRON=/path/to/electron` |
+| **Install the launcher** | `./scripts/install-launcher.sh`; puts Musa in Fuzzel and updates the mouse icon. |
+| **Open it** | `./target/release/musa` |
+| **See the daemon logs** | `./scripts/run.sh` |
 
-Tras compilar hay dos binarios:
+After building there are two binaries:
 
 ```
-target/release/musad   # daemon: biblioteca, búsqueda, favoritos, cola
-target/release/musa    # interfaz GTK4
+target/release/musad   # daemon: library, search, favorites, queue
+target/release/musa    # GTK4 interface
 ```
 
-<a id="empezar"></a>
-<a id="primera-sesion"></a>
+<a id="getting-started"></a>
+<a id="first-session"></a>
 
-## Primera sesión
+## First session
 
-1. Ejecuta `./target/release/musa`. La primera vez se abre la ventana de
-   **music.apple.com** del sidecar para que inicies sesión con tu Apple ID.
-   Si no se abre, ejecuta `./scripts/sidecar-login.sh`.
-2. Completa el inicio de sesión y la verificación en dos pasos en esa ventana.
-   La sesión queda en `~/.config/musa/sidecar/` con permisos de usuario. No
-   compartas tu contraseña ni los archivos de sesión.
-3. En cuanto Apple autoriza la cuenta, Musa oculta la ventana de login, descarga
-   tu biblioteca (la primera vez; las siguientes usan la caché) y muestra la
-   ventana principal.
-4. A partir de ahí, abre Musa y tu biblioteca estará ahí. Para reproducir hace
-   falta una suscripción activa de Apple Music.
+1. Run `./target/release/musa`. The first time, the sidecar's
+   **music.apple.com** window opens so you can sign in with your Apple ID.
+   If it doesn't open, run `./scripts/sidecar-login.sh`.
+2. Complete sign-in and two-factor verification in that window. The session
+   lands in `~/.config/musa/sidecar/` with user-only permissions. Don't share
+   your password or the session files.
+3. As soon as Apple authorizes the account, Musa hides the login window,
+   downloads your library (the first time; later runs use the cache) and shows
+   the main window.
+4. From then on, open Musa and your library is there. Playing music needs an
+   active Apple Music subscription.
 
-Si el sidecar no encuentra Electron, revisa `MUSA_ELECTRON` o ejecuta
-`cd sidecar && npm install`. Los errores del arranque quedan en
-`~/.cache/musa/musad.log` y `~/.cache/musa/sidecar.log`.
+If the sidecar can't find Electron, check `MUSA_ELECTRON` or run
+`cd sidecar && npm install`. Startup errors are logged in
+`~/.cache/musa/musad.log` and `~/.cache/musa/sidecar.log`.
 
-Variables útiles:
+Useful variables:
 
-| Variable | Efecto |
+| Variable | Effect |
 |---|---|
-| `MUSA_SOCKET` | Ruta del socket Unix. |
-| `MUSA_DAEMON` | Ruta a `musad` si no está junto a `musa`. |
-| `MUSA_NO_AUTOSTART=1` | No arrancar el daemon automáticamente. |
-| `MUSA_ELECTRON` | Ruta al Electron castLabs/Widevine del sidecar. |
-| `MUSA_SIDECAR_JS` | Ruta alternativa a `sidecar/main.js`. |
-| `MUSA_MEASURE_SECONDS` | Acorta las mediciones para pruebas de desarrollo. |
-| `GSK_RENDERER` | `cairo`, `ngl` o `vulkan` para comparar el piso de render. |
+| `MUSA_SOCKET` | Unix socket path. |
+| `MUSA_DAEMON` | Path to `musad` if it isn't next to `musa`. |
+| `MUSA_NO_AUTOSTART=1` | Don't start the daemon automatically. |
+| `MUSA_ELECTRON` | Path to the sidecar's castLabs/Widevine Electron. |
+| `MUSA_SIDECAR_JS` | Alternative path to `sidecar/main.js`. |
+| `MUSA_MEASURE_SECONDS` | Shortens measurements for development testing. |
+| `GSK_RENDERER` | `cairo`, `ngl` or `vulkan` to compare the render floor. |
 
-Rutas en disco (nunca se escribe fuera de ellas):
+On-disk paths (nothing is ever written outside them):
 
 - `~/.cache/musa/` — `real-library.json`, `covers/`, `player.json`,
-  `musad.log` y `sidecar.log`.
-- `~/.config/musa/` — `favorites.json`, `artists.json`, `albums.json` y `sidecar/` con la sesión de Apple.
-- Socket por defecto: `~/.cache/musa/musad.sock` (modo `0600`).
+  `musad.log` and `sidecar.log`.
+- `~/.config/musa/` — `favorites.json`, `artists.json`, `albums.json` and
+  `sidecar/` with the Apple session.
+- Default socket: `~/.cache/musa/musad.sock` (mode `0600`).
 
-## Capturas
+## Screenshots
 
-| Álbumes | Artistas | Canciones |
+| Albums | Artists | Songs |
 | --- | --- | --- |
 | ![](docs/screenshots/albums.webp) | ![](docs/screenshots/artists.webp) | ![](docs/screenshots/songs.webp) |
 
-| Playlists | Favoritos | Búsqueda |
+| Playlists | Favorites | Search |
 | --- | --- | --- |
 | ![](docs/screenshots/playlists.webp) | ![](docs/screenshots/favorites.webp) | ![](docs/screenshots/search.webp) |
 
-| Detalle de álbum | Detalle de playlist | Detalle de artista |
+| Album detail | Playlist detail | Artist detail |
 | --- | --- | --- |
 | ![](docs/screenshots/detail-album.webp) | ![](docs/screenshots/detail-playlist.webp) | ![](docs/screenshots/detail-artist.webp) |
 
-## Estado
+## Status
 
-Musa está en **MVP funcional**: el login de Apple Music, la biblioteca, la
-búsqueda y la reproducción real funcionan. Lo que falta es sobre todo
-sincronización y controles del escritorio.
+Musa is a **working MVP**: Apple Music sign-in, the library, search and real
+playback all work. What is missing is mostly syncing and desktop controls.
 
-| Área | Estado |
+| Area | Status |
 |---|---|
-| Inicio de sesión en Apple Music | **Verificado** |
-| Biblioteca, búsqueda y detalles | **Funciona** |
-| Reproducción con MusicKit/Widevine | **MVP** |
-| Favoritos | **Locales** (sin sincronización con Apple) |
-| Artistas seguidos | **Locales** (sincronización con Apple best-effort) |
-| Álbumes añadidos | **Locales** (sincronización con Apple best-effort) |
-| Letras | **Según permisos del token web** |
-| MPRIS y controles multimedia | **Pendiente** |
-| Restauración de cola entre sesiones | **En diseño** |
+| Apple Music sign-in | **Verified** |
+| Library, search and details | **Works** |
+| Playback with MusicKit/Widevine | **MVP** |
+| Favorites | **Local** (no Apple sync) |
+| Followed artists | **Local** (best-effort Apple sync) |
+| Added albums | **Local** (best-effort Apple sync) |
+| Lyrics | **Depends on web token permissions** |
+| MPRIS and media controls | **Pending** |
+| Queue restore across sessions | **In design** |
 
-## Contribuir
+## Contributing
 
-Antes de abrir un cambio, comprueba que todo sigue en verde:
+Before opening a change, make sure everything is still green:
 
 ```bash
-make test          # unitarias del protocolo y del daemon
+make test          # protocol and daemon unit tests
 make fmt
 make clippy        # -D warnings
 (cd sidecar && npm test)
 ```
 
-Probar la interfaz de verdad requiere una sesión de Apple Music y el sidecar.
-No incluyas contraseñas, tokens ni archivos de sesión en el repositorio.
+Actually testing the interface requires an Apple Music session and the sidecar.
+Never commit passwords, tokens or session files.
 
-## Lo que viene
+## Roadmap
 
-- **MPRIS**: controles multimedia del escritorio.
-- **Favoritos sincronizados** con Apple Music.
-- **Restauración de cola** y apagado por inactividad del motor.
-- **Cliente CLI**: el motor ya es independiente de GTK; un cliente de terminal
-  puede reproducir y consultar cola y letras por el mismo socket.
+- **MPRIS**: desktop media controls.
+- **Synced favorites** with Apple Music.
+- **Queue restore** and shutting the engine down when idle.
+- **CLI client**: the engine is already independent of GTK; a terminal client
+  can play music and query the queue and lyrics over the same socket.
 
-## Agradecimientos
+## Acknowledgements
 
-Musa usa [Rust](https://www.rust-lang.org), [GTK4](https://www.gtk.org),
+Musa uses [Rust](https://www.rust-lang.org), [GTK4](https://www.gtk.org),
 [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/),
-[relm4](https://relm4.org), [Electron](https://www.electronjs.org), MusicKit y
-Widevine para la integración real, y la tipografía [Inter](https://rsms.me/inter/).
+[relm4](https://relm4.org), [Electron](https://www.electronjs.org), MusicKit and
+Widevine for the real integration, and the [Inter](https://rsms.me/inter/) typeface.
 
-Musa es un proyecto independiente y no está afiliado a Apple. «Apple Music» es
-una marca de Apple Inc.
+Musa is an independent project and is not affiliated with Apple. «Apple Music»
+is a trademark of Apple Inc.
 
-Licenciado bajo la [Licencia MIT](LICENSE).
+Licensed under the [MIT License](LICENSE).

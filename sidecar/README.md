@@ -1,25 +1,26 @@
-# Sidecar de Musa (Fase 2)
+# Musa sidecar (Phase 2)
 
-Ventana Electron oculta con `music.apple.com`, MusicKit y Widevine. El audio
-sale por PipeWire; el daemon habla con este proceso por **JSON por líneas en
-stdin/stdout** y nunca le pasa credenciales de Apple.
+Hidden Electron window with `music.apple.com`, MusicKit and Widevine. Audio goes
+out through PipeWire; the daemon talks to this process using
+**newline-delimited JSON over stdin/stdout** and never passes it Apple
+credentials.
 
-## Estado en esta máquina
+## Status on this machine
 
-- **Widevine validado** el 2026-11-12 con la build castLabs `electron 44.1.0`
-  ya instalada por otra aplicación. Se ejecutó este `main.js` en modo lectura:
-  `navigator.requestMediaKeySystemAccess('com.widevine.alpha')` devolvió
-  `true`, `music.apple.com/us/new` cargó, `state` respondió y `shutdown` terminó
-  el proceso.
-- El usuario **inició sesión** el 2026-11-12. La ventana abre en
-  `https://music.apple.com/mx/home`, con `widevine:true` y sin pantalla de
-  acceso. La sesión se guarda en `~/.config/musa/sidecar/` (nunca en el repo);
-  la caché de sesión, en `~/.cache/musa/sidecar/`. Falta probar audio real y
-  conectar la UI nativa (Fase 3).
-- La distribución normal de Electron no incluye Widevine. Hace falta la build
-  **castLabs `wvcus`**, que añade el CDM y VMP.
+- **Widevine validated** on 2026-11-12 with the castLabs `electron 44.1.0` build
+  already installed by another application. This `main.js` was run in read-only
+  mode: `navigator.requestMediaKeySystemAccess('com.widevine.alpha')` returned
+  `true`, `music.apple.com/us/new` loaded, `state` responded and `shutdown`
+  terminated the process.
+- The user **signed in** on 2026-11-12. The window opens at
+  `https://music.apple.com/mx/home`, with `widevine:true` and no sign-in screen.
+  The session is stored in `~/.config/musa/sidecar/` (never in the repo); the
+  session cache lives in `~/.cache/musa/sidecar/`. Real audio and hooking up the
+  native UI (Phase 3) are still pending.
+- The normal Electron distribution does not include Widevine. The castLabs
+  **`wvcus`** build is required, as it adds the CDM and VMP.
 
-Comando de validación usado (sin instalar nada):
+Validation command used (without installing anything):
 
 ```bash
 ELECTRON=~/.local/share/slipmat/sidecar/node_modules/electron/dist/electron
@@ -31,65 +32,64 @@ ELECTRON=~/.local/share/slipmat/sidecar/node_modules/electron/dist/electron
       --ozone-platform=wayland --disable-gpu --show-login-window
 ```
 
-## Instalación prevista
+## Planned installation
 
 ```bash
 cd sidecar
-npm install   # baja la build de castLabs declarada en package.json
+npm install   # downloads the castLabs build declared in package.json
 npm test
 npm start
 ```
 
-Si `npm install` no resuelve la URL de castLabs, descarga manualmente el
-release `electron-vX.Y.Z-wvcus-linux-x64.zip` desde
-<https://github.com/castlabs/electron-releases/releases>, descomprímelo en
-`sidecar/electron/` y ejecuta `sidecar/electron/electron sidecar/`.
+If `npm install` can't resolve the castLabs URL, download the
+`electron-vX.Y.Z-wvcus-linux-x64.zip` release from
+<https://github.com/castlabs/electron-releases/releases> by hand, unpack it into
+`sidecar/electron/` and run `sidecar/electron/electron sidecar/`.
 
-## Protocolo
+## Protocol
 
-Entrada: `{"v":1,"id":1,"cmd":"play","params":{}}`.
-Salida: `{"v":1,"id":1,"ok":true,"data":{...}}` o
+Input: `{"v":1,"id":1,"cmd":"play","params":{}}`.
+Output: `{"v":1,"id":1,"ok":true,"data":{...}}` or
 `{"v":1,"id":1,"ok":false,"error":{"code":"...","message":"..."}}`.
-Eventos: `engine.ready`, `engine.error`, `engine.idle`, `engine.stopped`.
+Events: `engine.ready`, `engine.error`, `engine.idle`, `engine.stopped`.
 
-Comandos: `hello`, `show-login-window`, `session`, `library`, `search`,
+Commands: `hello`, `show-login-window`, `session`, `library`, `search`,
 `catalog-album`, `catalog-artist`, `catalog-playlist`, `follow-artist`, `add-album`, `lyrics`,
 `set-queue` (`song_ids`, `index`, `play`), `play`, `pause`, `next`, `prev`,
 `seek` (`position_ms`), `shuffle`, `repeat`, `volume` (0-100), `state`,
 `shutdown`.
 
-`set-queue` es tolerante a canciones retiradas: si MusicKit responde
-`NOT_FOUND` porque algún id de catálogo ya no existe, el sidecar quita esas
-pistas y reintenta con el resto, en vez de dejar toda la lista sin reproducir.
+`set-queue` is tolerant of removed songs: if MusicKit answers `NOT_FOUND`
+because some catalog id no longer exists, the sidecar drops those tracks and
+retries with the rest, instead of leaving the whole list unplayable.
 
-`follow-artist` intenta añadir un artista de catálogo a la biblioteca de Apple
-Music con `POST /me/favorites?ids[artists]=…` y, si falla, con
-`POST /me/library?ids[artists]=…`. Es best-effort: el daemon guarda el artista
-en local aunque Apple lo ignore.
+`follow-artist` tries to add a catalog artist to the Apple Music library with
+`POST /me/favorites?ids[artists]=…` and, if that fails, with
+`POST /me/library?ids[artists]=…`. It is best-effort: the daemon stores the
+artist locally even if Apple ignores it.
 
-`add-album` añade un disco con `POST /me/library?ids[albums]=…`. También es
-best-effort y el daemon conserva el álbum y sus canciones en local.
+`add-album` adds a record with `POST /me/library?ids[albums]=…`. It is also
+best-effort and the daemon keeps the album and its songs locally.
 
-`library` lee la biblioteca con los tokens que ya usa la página de Apple Music
-(developer token + Music User Token) y devuelve el snapshot del protocolo Musa.
-Descarga las portadas a `~/.cache/musa/real-covers/` y cachea el snapshot en
-`~/.cache/musa/real-library.json`. No imprime ni guarda tokens.
+`library` reads the library with the tokens the Apple Music page already uses
+(developer token + Music User Token) and returns the Musa protocol snapshot. It
+downloads artwork to `~/.cache/musa/real-covers/` and caches the snapshot in
+`~/.cache/musa/real-library.json`. It never prints or stores tokens.
 
-`session` devuelve solo datos no sensibles: URL, título, `music_kit`,
-`authorized` y storefront. Con la sesión del usuario respondió:
+`session` returns non-sensitive data only: URL, title, `music_kit`,
+`authorized` and storefront. With the user's session it answered:
 
 ```json
 {"url":"https://music.apple.com/mx/home","music_kit":true,"authorized":true,"storefront":"mx"}
 ```
 
-El sidecar se apaga solo tras **90 s** sin órdenes (`IDLE_SHUTDOWN_MS`) y emite
-`engine.idle`. El daemon es quien decide reanudarlo; al reanudar restaura la
-cola sin reproducir.
+The sidecar shuts itself down after **90 s** without commands
+(`IDLE_SHUTDOWN_MS`) and emits `engine.idle`. The daemon decides when to resume
+it; on resume it restores the queue without playing.
 
-## Integración real
+## Real integration
 
-La selección de pista y la reproducción dependen del DOM/MusicKit de Apple, que
-cambia sin aviso. El daemon abre la ventana de login si hace falta y, una vez
-autorizada la sesión, carga la biblioteca y reproduce a través de PipeWire. Las
-pruebas manuales están descritas en la sección «Primera sesión» del README
-principal.
+Track selection and playback depend on Apple's DOM/MusicKit, which changes
+without warning. The daemon opens the login window if needed and, once the
+session is authorized, loads the library and plays through PipeWire. The manual
+tests are described in the «First session» section of the main README.
