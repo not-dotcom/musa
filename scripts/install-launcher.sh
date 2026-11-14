@@ -14,6 +14,11 @@ mkdir -p "$APPS" "$ICONS/scalable/apps" "$ICONS/128x128/apps" "$ICONS/256x256/ap
 sed "s|^Exec=musa$|Exec=$BIN|" \
     "$ROOT/data/io.github.juliogarcia.Musa.desktop" \
     > "$APPS/io.github.juliogarcia.Musa.desktop"
+# Entrada de desarrollo: compila en debug y abre target/debug/musa.
+sed "s|^Exec=musa-dev$|Exec=$ROOT/scripts/musa-dev.sh|" \
+    "$ROOT/data/io.github.juliogarcia.Musa.Dev.desktop" \
+    > "$APPS/io.github.juliogarcia.Musa.Dev.desktop"
+
 cp "$ROOT/data/io.github.juliogarcia.Musa.svg" \
    "$ICONS/scalable/apps/io.github.juliogarcia.Musa.svg"
 
@@ -35,4 +40,5 @@ command -v gtk-update-icon-cache >/dev/null 2>&1 && \
     gtk-update-icon-cache -f -t "$ICONS" >/dev/null 2>&1 || true
 
 echo "Listo: $APPS/io.github.juliogarcia.Musa.desktop"
+echo "      $APPS/io.github.juliogarcia.Musa.Dev.desktop (debug)"
 echo "Abre Fuzzel (Mod+D), escribe «Musa» y pulsa Enter."

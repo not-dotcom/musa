@@ -358,9 +358,114 @@ pub fn song_tile(actions: &Actions, song: &Song) -> gtk::Button {
     labels.append(&artist);
     row.append(&labels);
     button.set_child(Some(&row));
+    attach_song_menu(actions, &button, song);
     let actions = actions.clone();
     let song = song.clone();
     button.connect_clicked(move |_| actions.play_song(&song));
+    button
+}
+
+/// Menú contextual de una canción: ir a su álbum o a su artista.
+///
+/// Se engancha en fase de captura para que el clic derecho no llegue a la fila
+/// o al botón que hay debajo (que reproduciría la canción con el clic
+/// izquierdo), y el popover se ancla al punto exacto del puntero.
+pub fn attach_song_menu(actions: &Actions, widget: &impl IsA<gtk::Widget>, song: &Song) {
+    let gesture = gtk::GestureClick::new();
+    gesture.set_button(gtk::gdk::BUTTON_SECONDARY);
+    gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let actions = actions.clone();
+    let song = song.clone();
+    let target = widget.clone().upcast::<gtk::Widget>();
+    let weak = target.downgrade();
+    gesture.connect_pressed(move |gesture, _, x, y| {
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+        if let Some(target) = weak.upgrade() {
+            open_song_menu(&actions, &song, &target, x, y);
+        }
+    });
+    widget.add_controller(gesture);
+}
+
+fn open_song_menu(actions: &Actions, song: &Song, parent: &gtk::Widget, x: f64, y: f64) {
+    let popover = gtk::Popover::new();
+    popover.set_parent(parent);
+    popover.set_has_arrow(false);
+    popover.set_position(gtk::PositionType::Bottom);
+    popover.add_css_class("song-menu");
+    popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+    popover.connect_closed(|popover| popover.unparent());
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    content.set_margin_top(8);
+    content.set_margin_bottom(8);
+    content.set_margin_start(6);
+    content.set_margin_end(6);
+    content.set_width_request(232);
+
+    let title = gtk::Label::new(Some(&song.title));
+    title.set_xalign(0.0);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_max_width_chars(30);
+    title.add_css_class("song-menu-title");
+    let meta = gtk::Label::new(Some(&format!(
+        "{} · {}",
+        song.artist_name, song.album_title
+    )));
+    meta.set_xalign(0.0);
+    meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    meta.set_max_width_chars(30);
+    meta.add_css_class("song-menu-meta");
+    content.append(&title);
+    content.append(&meta);
+
+    let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+    separator.add_css_class("song-menu-separator");
+    content.append(&separator);
+
+    let album = song_menu_button("Ir al álbum", "media-optical-symbolic");
+    if song.album_id.is_empty() {
+        album.set_sensitive(false);
+    } else {
+        let actions = actions.clone();
+        let id = song.album_id.clone();
+        let popover_close = popover.clone();
+        album.connect_clicked(move |_| {
+            popover_close.popdown();
+            actions.open_album(&id);
+        });
+    }
+    content.append(&album);
+
+    let artist = song_menu_button("Ir al artista", "avatar-default-symbolic");
+    if song.artist_id.is_empty() {
+        artist.set_sensitive(false);
+    } else {
+        let actions = actions.clone();
+        let id = song.artist_id.clone();
+        let popover_close = popover.clone();
+        artist.connect_clicked(move |_| {
+            popover_close.popdown();
+            actions.open_artist(&id);
+        });
+    }
+    content.append(&artist);
+
+    popover.set_child(Some(&content));
+    popover.popup();
+}
+
+fn song_menu_button(label: &str, icon: &str) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.add_css_class("song-menu-item");
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let image = gtk::Image::from_icon_name(icon);
+    image.set_pixel_size(16);
+    let text = gtk::Label::new(Some(label));
+    text.set_xalign(0.0);
+    content.append(&image);
+    content.append(&text);
+    button.set_child(Some(&content));
     button
 }
 
@@ -817,6 +922,7 @@ pub fn song_row(
     length.set_xalign(1.0);
     length.add_css_class("song-duration");
     row.append(&length);
+    attach_song_menu(actions, &row, song);
     actions.register_song_row(&row, &song.id);
 
     row.upcast()
@@ -1031,5 +1137,6 @@ fn song_result_view(actions: &Actions, song: &Song) -> gtk::Button {
     time.add_css_class("song-duration");
     row.append(&time);
     button.set_child(Some(&row));
+    attach_song_menu(actions, &button, song);
     button
 }
