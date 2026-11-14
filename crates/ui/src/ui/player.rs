@@ -40,8 +40,10 @@ pub struct PlayerBar {
     last_progress_ms: Rc<Cell<u64>>,
     last_duration_ms: Rc<Cell<u64>>,
     last_volume: Rc<Cell<u8>>,
-    meta: gtk::Box,
-    meta_width: Rc<Cell<i32>>,
+    left: gtk::Box,
+    controls: gtk::Box,
+    extras: gtk::Box,
+    center_width: Rc<Cell<i32>>,
     progress_source: Rc<RefCell<Option<gtk::glib::SourceId>>>,
     shuffle_guard: Rc<Cell<bool>>,
     heart_guard: Rc<Cell<bool>>,
@@ -78,12 +80,14 @@ impl PlayerBar {
         let title = gtk::Label::new(Some("Nada en reproducción"));
         title.set_xalign(0.0);
         title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        title.set_max_width_chars(24);
+        title.set_width_chars(1);
+        title.set_max_width_chars(28);
         title.add_css_class("player-title");
         let artist = gtk::Label::new(Some("Elige un álbum o una playlist"));
         artist.set_xalign(0.0);
         artist.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        artist.set_max_width_chars(24);
+        artist.set_width_chars(1);
+        artist.set_max_width_chars(28);
         artist.add_css_class("player-artist");
         meta.append(&title);
         meta.append(&artist);
@@ -98,7 +102,7 @@ impl PlayerBar {
 
         // Zona central: controles + progreso, ancho fijo.
         let controls = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        controls.set_size_request(560, -1);
+        controls.set_size_request(360, -1);
         controls.set_valign(gtk::Align::Center);
         let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         buttons.set_halign(gtk::Align::Center);
@@ -229,8 +233,10 @@ impl PlayerBar {
             last_progress_ms: Rc::new(Cell::new(u64::MAX)),
             last_duration_ms: Rc::new(Cell::new(u64::MAX)),
             last_volume: Rc::new(Cell::new(initial_volume.max(1))),
-            meta,
-            meta_width: Rc::new(Cell::new(0)),
+            left,
+            controls,
+            extras,
+            center_width: Rc::new(Cell::new(360)),
             progress_source: Rc::new(RefCell::new(None)),
             shuffle_guard: Rc::new(Cell::new(false)),
             heart_guard: Rc::new(Cell::new(false)),
@@ -346,14 +352,18 @@ impl PlayerBar {
             self.artist.set_text("Elige un álbum o una playlist");
         }
 
-        // El ancho de la columna de texto se ajusta al texto real para que el
-        // corazón quede a 8 px y no a un ancho fijo con hueco de más.
-        let title_width = self.title.measure(gtk::Orientation::Horizontal, -1).1;
-        let artist_width = self.artist.measure(gtk::Orientation::Horizontal, -1).1;
-        let meta_width = title_width.max(artist_width).max(1);
-        if self.meta_width.get() != meta_width {
-            self.meta_width.set(meta_width);
-            self.meta.set_size_request(meta_width, -1);
+        // El centro es flexible: 360..560. Se calcula con el ancho disponible
+        // y el tamaño natural de las zonas laterales, de modo que el texto no
+        // imponga un mínimo a la ventana.
+        if self.root.width() > 0 {
+            let left_natural = self.left.measure(gtk::Orientation::Horizontal, -1).1;
+            let right_natural = self.extras.measure(gtk::Orientation::Horizontal, -1).1;
+            let available = self.root.width() - 40;
+            let center = (available - 48 - left_natural - right_natural).clamp(360, 560);
+            if self.center_width.get() != center {
+                self.center_width.set(center);
+                self.controls.set_size_request(center, -1);
+            }
         }
 
         let icon = if state.playing {

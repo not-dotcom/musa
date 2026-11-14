@@ -588,38 +588,57 @@ stackswitcher button:checked {
 }
 
 /* Escala fina que engorda y muestra el pulgar al pasar el ratón. */
-.playerbar scale trough {
+.playerbar scale.horizontal {
   min-height: 4px;
+  padding: 0;
+}
+
+.playerbar scale.horizontal > trough {
+  min-height: 4px;
+  /* 8 px de margen deja un área de pulsación de 20 px sin engordar la pista. */
+  margin: 8px 0;
+  padding: 0;
   border-radius: 2px;
   background-color: rgba(255, 255, 255, 0.14);
+  background-image: none;
+  transition: none;
 }
 
-.playerbar scale:hover trough {
+.playerbar scale.horizontal:hover > trough,
+.playerbar scale.horizontal:active > trough {
   min-height: 6px;
+  margin: 7px 0;
 }
 
-.playerbar scale highlight {
-  background-color: #f2a5cb;
+.playerbar scale.horizontal > trough > highlight {
+  min-height: 4px;
+  padding: 0;
   border-radius: 2px;
+  background-color: #f2a5cb;
+  background-image: none;
+  transition: none;
 }
 
-.playerbar scale.volume highlight {
+.playerbar scale.volume > trough > highlight {
   background-color: #f4f4f5;
 }
 
-.playerbar scale slider {
+.playerbar scale.horizontal > trough > slider {
   min-width: 12px;
   min-height: 12px;
-  margin: 0;
+  /* El margen negativo evita que el pulgar engorde el trough: su caja de
+     layout mide 4 px y el círculo de 12 px se dibuja encima. */
+  margin: -4px;
   padding: 0;
   border-radius: 50%;
   background-color: #f4f4f5;
+  box-shadow: none;
   opacity: 0;
   transition: opacity 0.12s;
 }
 
-.playerbar scale:hover slider,
-.playerbar scale:active slider {
+.playerbar scale.horizontal:hover > trough > slider,
+.playerbar scale.horizontal:active > trough > slider {
   opacity: 1;
 }
 
