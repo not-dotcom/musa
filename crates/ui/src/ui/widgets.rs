@@ -7,12 +7,6 @@ use std::time::Duration;
 
 static ALBUM_CARDS: AtomicUsize = AtomicUsize::new(0);
 
-// Corazones propios: el tema del sistema puede resolver
-// `emblem-favorite-symbolic` como un emoji a color o como un PNG legacy. Estos
-// dos recursos garantizan el mismo trazo monocromo en cualquier escritorio.
-const HEART_FILLED: &[u8] = include_bytes!("../../assets/heart-filled.png");
-const HEART_OUTLINE: &[u8] = include_bytes!("../../assets/heart-outline.png");
-
 pub fn album_cards_built() -> usize {
     ALBUM_CARDS.load(Ordering::Relaxed)
 }
@@ -930,15 +924,11 @@ pub fn apply_favorite_class(button: &gtk::Button, favorite: bool) {
 }
 
 pub fn heart_image(favorite: bool, size: i32) -> gtk::Image {
-    let bytes = glib::Bytes::from_static(if favorite {
-        HEART_FILLED
+    let image = gtk::Image::from_icon_name(if favorite {
+        "musa-heart-filled-symbolic"
     } else {
-        HEART_OUTLINE
+        "musa-heart-symbolic"
     });
-    let image = gtk::Image::new();
-    if let Ok(texture) = gtk::gdk::Texture::from_bytes(&bytes) {
-        image.set_paintable(Some(&texture));
-    }
     image.set_pixel_size(size);
     image
 }
@@ -957,8 +947,9 @@ pub fn set_heart(button: &gtk::Button, favorite: bool) {
     apply_favorite_class(button, favorite);
 }
 
-pub fn set_heart_toggle(button: &gtk::ToggleButton, favorite: bool) {
-    button.set_child(Some(&heart_image(favorite, 16)));
+pub fn set_heart_toggle(button: &gtk::ToggleButton, favorite: bool, size: i32) {
+    button.set_child(Some(&heart_image(favorite, size)));
+    apply_favorite_class(button.upcast_ref::<gtk::Button>(), favorite);
 }
 
 /// Botón principal con icono y etiqueta. El glifo ayuda a reconocer la acción

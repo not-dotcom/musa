@@ -61,10 +61,13 @@ impl PlayerUi {
             pos = pos.saturating_add(self.synced_at.elapsed().as_millis() as u64);
         }
         if let Some(track) = &self.state.track {
-            pos.min(track.duration_ms)
-        } else {
-            pos
+            // Sin duración conocida no se puede recortar: antes se hacía
+            // `pos.min(0)` y el tiempo se quedaba clavado en 0:00.
+            if track.duration_ms > 0 {
+                pos = pos.min(track.duration_ms);
+            }
         }
+        pos
     }
 }
 
@@ -354,7 +357,11 @@ impl Actions {
             let mut player = self.player.borrow_mut();
             match player.state.track.as_ref() {
                 Some(track) => {
-                    let position_ms = position_ms.min(track.duration_ms);
+                    let position_ms = if track.duration_ms > 0 {
+                        position_ms.min(track.duration_ms)
+                    } else {
+                        position_ms
+                    };
                     player.state.position_ms = position_ms;
                     player.synced_at = Instant::now();
                     position_ms
@@ -1015,12 +1022,26 @@ fn start_ticker(actions: &Actions, bar: &PlayerBar) {
 
 pub fn repeat_icon(mode: RepeatMode) -> &'static str {
     match mode {
-        RepeatMode::One => "media-playlist-repeat-song-symbolic",
-        _ => "media-playlist-repeat-symbolic",
+        RepeatMode::One => "musa-repeat-one",
+        _ => "musa-repeat",
+    }
+}
+
+fn install_icons() {
+    let bytes =
+        gtk::glib::Bytes::from_static(include_bytes!(concat!(env!("OUT_DIR"), "/icons.gresource")));
+    let Ok(resource) = gtk::gio::Resource::from_data(&bytes) else {
+        return;
+    };
+    gtk::gio::resources_register(&resource);
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::IconTheme::for_display(&display)
+            .add_resource_path("/io/github/juliogarcia/Musa/icons");
     }
 }
 
 fn install_css() {
+    install_icons();
     let provider = gtk::CssProvider::new();
     provider.load_from_string(include_str!("style.css"));
     if let Some(display) = gtk::gdk::Display::default() {

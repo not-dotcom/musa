@@ -508,68 +508,119 @@ stackswitcher button:checked {
   color: #ffffff;
 }
 
+/* Barra de reproducción flotante: tarjeta redondeada sobre el fondo. */
 .playerbar {
-  background-color: #121215;
-  border-top: 1px solid @musa_line;
-  padding: 10px 18px;
+  min-height: 88px;
+  padding: 0 20px;
+  background-color: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
 }
 
 .player-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  color: #f4f4f5;
 }
 
 .player-artist {
-  font-size: 11px;
-  color: rgba(245, 245, 247, 0.5);
+  font-size: 13px;
+  color: #a1a1aa;
 }
 
-.play-button {
-  background-color: #f5f5f7;
-  color: #101012;
+.player-cover {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+/* Botones circulares de la barra: 44 px; el de reproducir, 48 px. */
+.playerbar button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
   border: none;
   border-radius: 999px;
-  min-width: 42px;
-  min-height: 42px;
-  padding: 0;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: #a1a1aa;
 }
 
-.play-button:hover {
+.playerbar button:hover {
+  color: #f4f4f5;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.playerbar button:focus-visible {
+  outline: 2px solid #f4f4f5;
+  outline-offset: 2px;
+}
+
+.playerbar button.play {
+  min-width: 48px;
+  min-height: 48px;
+  background-color: #f4f4f5;
+  color: #141416;
+}
+
+.playerbar button.play:hover {
   background-color: #ffffff;
 }
 
-.play-button image {
-  color: #101012;
+.playerbar button.play image {
+  color: #141416;
 }
 
-.progress-scale {
-  min-height: 20px;
+/* Los iconos de trazo van horneados en gris; al pasar el ratón se aclaran. */
+.playerbar image.stroke-icon {
+  transition: filter 0.12s;
 }
 
-.progress-scale trough {
-  min-height: 4px;
-  border-radius: 99px;
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-.progress-scale highlight {
-  background-color: @musa_red;
-  border-radius: 99px;
-}
-
-.progress-scale slider {
-  background-color: #ffffff;
-  border-radius: 99px;
-  padding: 5px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+.playerbar button:hover image.stroke-icon {
+  filter: brightness(1.5);
 }
 
 .time-label {
-  font-size: 11px;
-  color: rgba(245, 245, 247, 0.58);
+  min-width: 36px;
+  font-size: 12px;
+  color: #a1a1aa;
   font-feature-settings: "tnum";
+}
+
+/* Escala fina que engorda y muestra el pulgar al pasar el ratón. */
+.playerbar scale trough {
+  min-height: 4px;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.playerbar scale:hover trough {
+  min-height: 6px;
+}
+
+.playerbar scale highlight {
+  background-color: #f2a5cb;
+  border-radius: 2px;
+}
+
+.playerbar scale.volume highlight {
+  background-color: #f4f4f5;
+}
+
+.playerbar scale slider {
+  min-width: 12px;
+  min-height: 12px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background-color: #f4f4f5;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.playerbar scale:hover slider,
+.playerbar scale:active slider {
+  opacity: 1;
 }
 
 .accent-icon image {
@@ -591,6 +642,50 @@ stackswitcher button:checked {
   border-radius: 14px;
   background-color: #1a1a1f;
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Menú contextual de una canción (clic derecho). */
+.song-menu {
+  border-radius: 12px;
+  background-color: #1a1a1f;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.song-menu-title {
+  font-weight: 700;
+  font-size: 13px;
+  padding: 2px 8px;
+}
+
+.song-menu-meta {
+  font-size: 11px;
+  color: @musa_muted;
+  padding: 0 8px 4px;
+}
+
+.song-menu-separator {
+  margin: 4px 8px 6px;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.song-menu-item {
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+.song-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+.song-menu-item image {
+  color: @musa_red;
+}
+
+.song-menu-item:disabled image {
+  color: @musa_muted;
 }
 
 .queue-list row {

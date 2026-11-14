@@ -23,16 +23,26 @@ pub struct PlayerBar {
     previous: gtk::Button,
     next: gtk::Button,
     shuffle: gtk::ToggleButton,
+    shuffle_icon: gtk::Image,
     repeat_icon: gtk::Image,
     repeat_button: gtk::Button,
     heart: gtk::ToggleButton,
-    volume: gtk::ScaleButton,
+    volume: gtk::Scale,
+    volume_button: gtk::Button,
+    volume_icon: gtk::Image,
     lyrics: gtk::Button,
     queue: gtk::Button,
     elapsed: gtk::Label,
     total: gtk::Label,
     progress: gtk::Scale,
     last_cover_key: Rc<RefCell<String>>,
+    last_progress_track: Rc<RefCell<String>>,
+    last_progress_ms: Rc<Cell<u64>>,
+    last_duration_ms: Rc<Cell<u64>>,
+    last_volume: Rc<Cell<u8>>,
+    meta: gtk::Box,
+    meta_width: Rc<Cell<i32>>,
+    progress_source: Rc<RefCell<Option<gtk::glib::SourceId>>>,
     shuffle_guard: Rc<Cell<bool>>,
     heart_guard: Rc<Cell<bool>>,
     volume_guard: Rc<Cell<bool>>,
@@ -41,12 +51,19 @@ pub struct PlayerBar {
 
 impl PlayerBar {
     pub fn new(actions: &Actions) -> Self {
+        let initial_volume = actions.player.borrow().state.volume;
         let root = gtk::CenterBox::new();
         root.add_css_class("playerbar");
         root.set_height_request(88);
-        let left = gtk::Box::new(gtk::Orientation::Horizontal, 16);
-        left.set_valign(gtk::Align::Center);
+        root.set_margin_top(8);
+        root.set_margin_bottom(8);
+        root.set_margin_start(8);
+        root.set_margin_end(8);
 
+        // Zona izquierda: portada + texto + favorito, todo seguido.
+        let left = gtk::Box::new(gtk::Orientation::Horizontal, 14);
+        left.set_valign(gtk::Align::Center);
+        left.set_margin_end(24);
         let cover = gtk::Picture::new();
         cover.set_size_request(56, 56);
         cover.set_content_fit(gtk::ContentFit::Cover);
@@ -54,9 +71,10 @@ impl PlayerBar {
         cover.add_css_class("player-cover");
         left.append(&cover);
 
+        let meta_and_heart = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        meta_and_heart.set_valign(gtk::Align::Center);
         let meta = gtk::Box::new(gtk::Orientation::Vertical, 3);
         meta.set_valign(gtk::Align::Center);
-        meta.set_width_request(190);
         let title = gtk::Label::new(Some("Nada en reproducción"));
         title.set_xalign(0.0);
         title.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -69,60 +87,63 @@ impl PlayerBar {
         artist.add_css_class("player-artist");
         meta.append(&title);
         meta.append(&artist);
-        left.append(&meta);
+        meta_and_heart.append(&meta);
 
         let heart = gtk::ToggleButton::new();
-        heart.set_child(Some(&super::widgets::heart_image(false, 16)));
-        heart.add_css_class("ghost-button");
+        heart.set_child(Some(&super::widgets::heart_image(false, 20)));
         heart.add_css_class("favorite-button");
         heart.set_tooltip_text(Some("Añadir a favoritos"));
-        left.append(&heart);
+        meta_and_heart.append(&heart);
+        left.append(&meta_and_heart);
 
-        let controls = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        controls.set_hexpand(true);
+        // Zona central: controles + progreso, ancho fijo.
+        let controls = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        controls.set_size_request(560, -1);
         controls.set_valign(gtk::Align::Center);
-        let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         buttons.set_halign(gtk::Align::Center);
         let shuffle = gtk::ToggleButton::new();
-        shuffle.set_child(Some(&gtk::Image::from_icon_name(
-            "media-playlist-shuffle-symbolic",
-        )));
-        shuffle.add_css_class("ghost-button");
+        let shuffle_icon = gtk::Image::from_icon_name("musa-shuffle");
+        shuffle_icon.set_pixel_size(20);
+        shuffle_icon.add_css_class("stroke-icon");
+        shuffle.set_child(Some(&shuffle_icon));
         shuffle.add_css_class("shuffle-button");
         shuffle.set_tooltip_text(Some("Aleatorio"));
         buttons.append(&shuffle);
         let previous = gtk::Button::new();
-        previous.set_child(Some(&gtk::Image::from_icon_name(
-            "media-skip-backward-symbolic",
-        )));
-        previous.add_css_class("ghost-button");
+        let previous_icon = gtk::Image::from_icon_name("musa-skip-back");
+        previous_icon.set_pixel_size(22);
+        previous_icon.add_css_class("stroke-icon");
+        previous.set_child(Some(&previous_icon));
         previous.set_tooltip_text(Some("Anterior"));
         buttons.append(&previous);
         let play = gtk::Button::new();
-        let play_icon = gtk::Image::from_icon_name("media-playback-start-symbolic");
-        play_icon.set_pixel_size(18);
+        let play_icon = gtk::Image::from_icon_name("musa-play");
+        play_icon.set_pixel_size(22);
         play.set_child(Some(&play_icon));
-        play.add_css_class("play-button");
+        play.add_css_class("play");
         play.set_tooltip_text(Some("Reproducir o pausar"));
         buttons.append(&play);
         let next = gtk::Button::new();
-        next.set_child(Some(&gtk::Image::from_icon_name(
-            "media-skip-forward-symbolic",
-        )));
-        next.add_css_class("ghost-button");
+        let next_icon = gtk::Image::from_icon_name("musa-skip-forward");
+        next_icon.set_pixel_size(22);
+        next_icon.add_css_class("stroke-icon");
+        next.set_child(Some(&next_icon));
         next.set_tooltip_text(Some("Siguiente"));
         buttons.append(&next);
         let repeat_button = gtk::Button::new();
-        let repeat_icon = gtk::Image::from_icon_name("media-playlist-repeat-symbolic");
+        let repeat_icon = gtk::Image::from_icon_name("musa-repeat");
+        repeat_icon.set_pixel_size(20);
+        repeat_icon.add_css_class("stroke-icon");
         repeat_button.set_child(Some(&repeat_icon));
-        repeat_button.add_css_class("ghost-button");
         repeat_button.set_tooltip_text(Some("Repetición"));
         buttons.append(&repeat_button);
         controls.append(&buttons);
 
-        let progress_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let progress_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         let elapsed = gtk::Label::new(Some("0:00"));
-        elapsed.set_width_chars(5);
+        elapsed.set_size_request(36, -1);
+        elapsed.set_width_chars(4);
         elapsed.set_xalign(1.0);
         elapsed.add_css_class("time-label");
         let progress = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 1.0);
@@ -130,46 +151,57 @@ impl PlayerBar {
         progress.set_hexpand(true);
         progress.add_css_class("progress-scale");
         let total = gtk::Label::new(Some("0:00"));
-        total.set_width_chars(5);
+        total.set_size_request(36, -1);
+        total.set_width_chars(4);
         total.set_xalign(0.0);
         total.add_css_class("time-label");
         progress_row.append(&elapsed);
         progress_row.append(&progress);
         progress_row.append(&total);
         controls.append(&progress_row);
-        root.set_center_widget(Some(&controls));
 
-        let extras = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        // Zona derecha: letras, cola y volumen.
+        let extras = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         extras.set_valign(gtk::Align::Center);
-        extras.set_margin_end(10);
-        let volume = gtk::ScaleButton::new(
-            0.0,
-            100.0,
-            5.0,
-            &[
-                "audio-volume-muted-symbolic",
-                "audio-volume-low-symbolic",
-                "audio-volume-medium-symbolic",
-                "audio-volume-high-symbolic",
-            ],
-        );
-        volume.set_value(78.0);
-        volume.set_tooltip_text(Some("Volumen"));
-        volume.add_css_class("volume-button");
-        extras.append(&volume);
+        extras.set_halign(gtk::Align::End);
+        extras.set_margin_start(24);
         let lyrics_button = gtk::Button::new();
-        lyrics_button.set_child(Some(&gtk::Image::from_icon_name("text-x-generic-symbolic")));
-        lyrics_button.add_css_class("ghost-button");
+        let lyrics_icon = gtk::Image::from_icon_name("musa-message-square-text");
+        lyrics_icon.set_pixel_size(20);
+        lyrics_icon.add_css_class("stroke-icon");
+        lyrics_button.set_child(Some(&lyrics_icon));
         lyrics_button.set_tooltip_text(Some("Letras"));
         extras.append(&lyrics_button);
         let queue_button = gtk::Button::new();
-        queue_button.set_child(Some(&gtk::Image::from_icon_name("view-list-symbolic")));
-        queue_button.add_css_class("ghost-button");
+        let queue_icon = gtk::Image::from_icon_name("musa-list-music");
+        queue_icon.set_pixel_size(20);
+        queue_icon.add_css_class("stroke-icon");
+        queue_button.set_child(Some(&queue_icon));
         queue_button.set_tooltip_text(Some("Cola"));
         extras.append(&queue_button);
-        root.set_end_widget(Some(&extras));
+
+        let volume_group = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        volume_group.set_valign(gtk::Align::Center);
+        volume_group.set_margin_start(12);
+        let volume_button = gtk::Button::new();
+        let volume_icon = gtk::Image::from_icon_name("musa-volume-2");
+        volume_icon.set_pixel_size(20);
+        volume_icon.add_css_class("stroke-icon");
+        volume_button.set_child(Some(&volume_icon));
+        volume_button.set_tooltip_text(Some("Silenciar"));
+        volume_group.append(&volume_button);
+        let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
+        volume.set_draw_value(false);
+        volume.set_size_request(96, -1);
+        volume.set_value(initial_volume as f64);
+        volume.add_css_class("volume");
+        volume_group.append(&volume);
+        extras.append(&volume_group);
 
         root.set_start_widget(Some(&left));
+        root.set_center_widget(Some(&controls));
+        root.set_end_widget(Some(&extras));
+
         let bar = Self {
             root,
             cover,
@@ -180,22 +212,33 @@ impl PlayerBar {
             previous,
             next,
             shuffle,
+            shuffle_icon,
             repeat_icon,
             repeat_button,
             heart,
             volume,
+            volume_button,
+            volume_icon,
             lyrics: lyrics_button,
             queue: queue_button,
             elapsed,
             total,
             progress,
             last_cover_key: Rc::new(RefCell::new(String::new())),
+            last_progress_track: Rc::new(RefCell::new(String::new())),
+            last_progress_ms: Rc::new(Cell::new(u64::MAX)),
+            last_duration_ms: Rc::new(Cell::new(u64::MAX)),
+            last_volume: Rc::new(Cell::new(initial_volume.max(1))),
+            meta,
+            meta_width: Rc::new(Cell::new(0)),
+            progress_source: Rc::new(RefCell::new(None)),
             shuffle_guard: Rc::new(Cell::new(false)),
             heart_guard: Rc::new(Cell::new(false)),
             volume_guard: Rc::new(Cell::new(false)),
             progress_guard: Rc::new(Cell::new(false)),
         };
         bar.connect(actions);
+        bar.refresh(actions);
         bar
     }
 
@@ -244,12 +287,28 @@ impl PlayerBar {
 
         let actions_volume = actions.clone();
         let volume_guard = self.volume_guard.clone();
-        self.volume.connect_value_changed(move |volume, value| {
+        let last_volume = self.last_volume.clone();
+        self.volume.connect_value_changed(move |scale| {
             if volume_guard.get() {
                 return;
             }
-            actions_volume.set_volume(value.round() as u8);
-            let _ = volume;
+            let volume = scale.value().round().clamp(0.0, 100.0) as u8;
+            if volume > 0 {
+                last_volume.set(volume);
+            }
+            actions_volume.set_volume(volume);
+        });
+
+        let actions_mute = actions.clone();
+        let last_volume = self.last_volume.clone();
+        self.volume_button.connect_clicked(move |_| {
+            let current = actions_mute.player.borrow().state.volume;
+            if current > 0 {
+                last_volume.set(current);
+                actions_mute.set_volume(0);
+            } else {
+                actions_mute.set_volume(last_volume.get().clamp(1, 100));
+            }
         });
 
         let actions_seek = actions.clone();
@@ -287,10 +346,20 @@ impl PlayerBar {
             self.artist.set_text("Elige un álbum o una playlist");
         }
 
+        // El ancho de la columna de texto se ajusta al texto real para que el
+        // corazón quede a 8 px y no a un ancho fijo con hueco de más.
+        let title_width = self.title.measure(gtk::Orientation::Horizontal, -1).1;
+        let artist_width = self.artist.measure(gtk::Orientation::Horizontal, -1).1;
+        let meta_width = title_width.max(artist_width).max(1);
+        if self.meta_width.get() != meta_width {
+            self.meta_width.set(meta_width);
+            self.meta.set_size_request(meta_width, -1);
+        }
+
         let icon = if state.playing {
-            "media-playback-pause-symbolic"
+            "musa-pause"
         } else {
-            "media-playback-start-symbolic"
+            "musa-play"
         };
         if self.play_icon.icon_name().as_deref() != Some(icon) {
             self.play_icon.set_icon_name(Some(icon));
@@ -304,9 +373,24 @@ impl PlayerBar {
         } else {
             "Aleatorio"
         }));
+        let shuffle_icon = if state.shuffle {
+            "musa-shuffle-active"
+        } else {
+            "musa-shuffle"
+        };
+        if self.shuffle_icon.icon_name().as_deref() != Some(shuffle_icon) {
+            self.shuffle_icon.set_icon_name(Some(shuffle_icon));
+        }
 
-        self.repeat_icon
-            .set_icon_name(Some(repeat_icon(state.repeat)));
+        let repeat_icon = repeat_icon(state.repeat);
+        let repeat_icon = if state.repeat == RepeatMode::Off {
+            repeat_icon.to_string()
+        } else {
+            format!("{repeat_icon}-active")
+        };
+        if self.repeat_icon.icon_name().as_deref() != Some(repeat_icon.as_str()) {
+            self.repeat_icon.set_icon_name(Some(&repeat_icon));
+        }
         self.repeat_button
             .set_tooltip_text(Some(state.repeat.label()));
         if state.repeat == RepeatMode::Off {
@@ -320,7 +404,7 @@ impl PlayerBar {
         self.heart.set_active(favorite);
         self.heart_guard.set(false);
         self.heart.set_sensitive(track.is_some());
-        super::widgets::set_heart_toggle(&self.heart, favorite);
+        super::widgets::set_heart_toggle(&self.heart, favorite, 20);
         self.heart.set_tooltip_text(Some(if favorite {
             "Quitar de favoritos"
         } else {
@@ -329,14 +413,43 @@ impl PlayerBar {
         self.volume_guard.set(true);
         self.volume.set_value(state.volume as f64);
         self.volume_guard.set(false);
+        let volume_icon = match state.volume {
+            0 => "musa-volume-x",
+            1..=33 => "musa-volume-1",
+            _ => "musa-volume-2",
+        };
+        if self.volume_icon.icon_name().as_deref() != Some(volume_icon) {
+            self.volume_icon.set_icon_name(Some(volume_icon));
+        }
+        self.volume_button
+            .set_tooltip_text(Some(if state.volume == 0 {
+                "Activar sonido"
+            } else {
+                "Silenciar"
+            }));
 
+        let playing = state.playing;
         let duration_ms = track.as_ref().map(|t| t.duration_ms).unwrap_or(0);
+        let track_key = track
+            .as_ref()
+            .map(|t| format!("{}:{}", t.id, duration_ms))
+            .unwrap_or_default();
         self.progress_guard.set(true);
-        self.progress.set_range(0.0, duration_ms.max(1) as f64);
-        self.progress.set_value(position.min(duration_ms) as f64);
+        if self.last_duration_ms.get() != duration_ms {
+            self.last_duration_ms.set(duration_ms);
+            self.progress.set_range(0.0, duration_ms.max(1) as f64);
+        }
         self.progress_guard.set(false);
-        self.elapsed.set_text(&duration(position.min(duration_ms)));
         self.total.set_text(&duration(duration_ms));
+        let track_changed = *self.last_progress_track.borrow() != track_key;
+        if track_changed {
+            *self.last_progress_track.borrow_mut() = track_key;
+            self.last_progress_ms.set(u64::MAX);
+        }
+        if track_changed || !playing {
+            self.set_progress(position, duration_ms);
+        }
+        self.sync_progress_loop(actions, playing);
 
         let cover_key = track
             .as_ref()
@@ -359,6 +472,65 @@ impl PlayerBar {
             } else {
                 self.cover.set_paintable(None::<&gtk::gdk::Texture>);
             }
+        }
+    }
+
+    /// Actualiza solo la posición mientras suena. Se llama desde un timeout de
+    /// 500 ms que solo existe durante la reproducción.
+    fn refresh_progress(&self, actions: &Actions) {
+        let (position, duration_ms) = {
+            let player = actions.player.borrow();
+            if !player.state.playing {
+                return;
+            }
+            let position = player.position_ms();
+            let duration_ms = player
+                .state
+                .track
+                .as_ref()
+                .map(|t| t.duration_ms)
+                .unwrap_or(0);
+            (position, duration_ms)
+        };
+        self.set_progress(position, duration_ms);
+    }
+
+    fn set_progress(&self, position: u64, duration_ms: u64) {
+        let position = if duration_ms > 0 {
+            position.min(duration_ms)
+        } else {
+            position
+        };
+        if self.last_progress_ms.get() == position {
+            return;
+        }
+        self.last_progress_ms.set(position);
+        self.progress_guard.set(true);
+        self.progress.set_value(if duration_ms > 0 {
+            position as f64
+        } else {
+            0.0
+        });
+        self.progress_guard.set(false);
+        self.elapsed.set_text(&duration(position));
+    }
+
+    fn sync_progress_loop(&self, actions: &Actions, playing: bool) {
+        if playing {
+            if self.progress_source.borrow().is_some() {
+                return;
+            }
+            let bar = self.clone();
+            let actions = actions.clone();
+            let id = gtk::glib::timeout_add_local(Duration::from_millis(500), move || {
+                if actions.player.borrow().state.playing {
+                    bar.refresh_progress(&actions);
+                }
+                gtk::glib::ControlFlow::Continue
+            });
+            *self.progress_source.borrow_mut() = Some(id);
+        } else if let Some(id) = self.progress_source.borrow_mut().take() {
+            id.remove();
         }
     }
 }

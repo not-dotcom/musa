@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/io/github/juliogarcia/Musa/icons">
+    <file>musa-shuffle.svg</file>
+    <file>musa-shuffle-active.svg</file>
+    <file>musa-skip-back.svg</file>
+    <file>musa-skip-forward.svg</file>
+    <file>musa-play.svg</file>
+    <file>musa-pause.svg</file>
+    <file>musa-repeat.svg</file>
+    <file>musa-repeat-active.svg</file>
+    <file>musa-repeat-one.svg</file>
+    <file>musa-repeat-one-active.svg</file>
+    <file>musa-message-square-text.svg</file>
+    <file>musa-list-music.svg</file>
+    <file>musa-volume-x.svg</file>
+    <file>musa-volume-1.svg</file>
+    <file>musa-volume-2.svg</file>
+    <file>musa-heart-symbolic.svg</file>
+    <file>musa-heart-filled-symbolic.svg</file>
+  </gresource>
+</gresources>
