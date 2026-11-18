@@ -13,3 +13,7 @@
 
 # Documentos internos de diseño (no se publican)
 docs/*.md
+docs/*.patch
+
+# Estado local de las herramientas de desarrollo
+.commandcode/

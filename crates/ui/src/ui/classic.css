@@ -1,0 +1,275 @@
+/* Modo clásico: skin inspirado en Winamp Classic.
+   Todo va prefijado con `.classic-` y se carga con su propio proveedor, así
+   que no toca el estilo del resto de la aplicación. */
+
+.classic-window {
+  background-color: #c0c0c0;
+  color: #000000;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.classic-window .classic-panel {
+  background-color: #c0c0c0;
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  padding: 4px;
+}
+
+/* Barra de título estilo Winamp: franja fina, texto centrado y botones a la
+   derecha. Se usa con `gtk::Window::set_titlebar`, así que sustituye a la
+   decoración del sistema. */
+.classic-titlebar {
+  background-image: linear-gradient(to right, #1a1a2e 0%, #2d2d54 50%, #1a1a2e 100%);
+  border-bottom: 1px solid #000000;
+  min-height: 18px;
+  padding: 0 4px;
+}
+
+.classic-titlebar-label {
+  color: #e8e8f0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.classic-titlebar button {
+  min-width: 14px;
+  min-height: 12px;
+  min-height: 12px;
+  padding: 0;
+  border: 1px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  border-radius: 0;
+  background-color: #c0c0c0;
+  background-image: none;
+  box-shadow: none;
+  color: #000000;
+}
+
+.classic-titlebar button:hover {
+  background-color: #d4d4d4;
+}
+
+.classic-titlebar button:active {
+  border-color: #404040 #ffffff #ffffff #404040;
+}
+
+.classic-titlebar image {
+  color: #000000;
+}
+
+/* Tiempo en LED: fondo negro, dígitos verdes, ancho fijo por dígito. */
+.classic-display {
+  background-color: #000000;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  border-radius: 0;
+  padding: 1px 6px;
+}
+
+.classic-display label {
+  color: #00d000;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 26px;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+  text-shadow: 0 0 6px rgba(0, 208, 0, 0.55);
+}
+
+.classic-display label.classic-display-paused {
+  color: #556b12;
+}
+
+/* Marquesina de título/artista. */
+.classic-marquee {
+  background-color: #000000;
+  border: 1px solid #2a2a2a;
+  border-radius: 0;
+  padding: 2px 6px;
+}
+
+.classic-marquee label {
+  color: #d8d8d8;
+  font-size: 12px;
+}
+
+/* Barra de espectro decorativa: barras verdes sobre negro. */
+.classic-spectrum {
+  background-color: #000000;
+  border: 1px solid #2a2a2a;
+  border-radius: 0;
+  padding: 2px 4px;
+}
+
+/* Transporte: botones cuadrados con relieve, como los de Winamp. */
+.classic-window button.classic-button {
+  min-width: 26px;
+  min-height: 20px;
+  padding: 0 4px;
+  border: 1px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  border-radius: 0;
+  background-color: #c0c0c0;
+  background-image: none;
+  box-shadow: none;
+  color: #000000;
+  font-weight: 700;
+}
+
+.classic-window button.classic-button:hover {
+  background-color: #d4d4d4;
+}
+
+.classic-window button.classic-button:active,
+.classic-window button.classic-button:checked {
+  border-color: #404040 #ffffff #ffffff #404040;
+  background-color: #b0b0b0;
+}
+
+.classic-window button.classic-button:disabled {
+  color: #808080;
+}
+
+.classic-window button.classic-button image {
+  color: #000000;
+}
+
+.classic-window button.classic-button.classic-active {
+  background-color: #a8b878;
+}
+
+/* Barra de progreso. */
+.classic-window scale.classic-progress {
+  min-height: 10px;
+  padding: 0;
+}
+
+.classic-window scale.classic-progress > trough {
+  min-height: 10px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #404040;
+  border-radius: 0;
+  background-color: #000000;
+  background-image: none;
+}
+
+.classic-window scale.classic-progress > trough > highlight {
+  min-height: 10px;
+  border-radius: 0;
+  background-color: #00b000;
+  background-image: none;
+}
+
+.classic-window scale.classic-progress > trough > slider {
+  min-width: 8px;
+  min-height: 12px;
+  margin: -2px;
+  padding: 0;
+  border: 1px solid #404040;
+  border-radius: 0;
+  background-color: #c0c0c0;
+  box-shadow: none;
+}
+
+/* Volumen: pista fina y relleno claro, para que no se confunda con el progreso. */
+.classic-window scale.classic-volume {
+  min-height: 8px;
+  padding: 0;
+}
+
+.classic-window scale.classic-volume > trough {
+  min-height: 6px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #505050;
+  border-radius: 0;
+  background-color: #303030;
+  background-image: none;
+}
+
+.classic-window scale.classic-volume > trough > highlight {
+  min-height: 6px;
+  border-radius: 0;
+  background-color: #9a9a9a;
+  background-image: none;
+}
+
+.classic-window scale.classic-volume > trough > slider {
+  min-width: 6px;
+  min-height: 10px;
+  margin: -2px;
+  padding: 0;
+  border: 1px solid #404040;
+  border-radius: 0;
+  background-color: #c0c0c0;
+  box-shadow: none;
+}
+
+.classic-info {
+  color: #202020;
+  font-size: 10px;
+  font-feature-settings: "tnum";
+  margin-right: 4px;
+}
+
+/* Windowshade: negro tipo LED. Sobre el gris del panel el texto no se leía. */
+.classic-shade-panel {
+  background-color: #000000;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  padding: 2px 8px;
+}
+
+.classic-shade-time {
+  color: #00d000;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 16px;
+  font-weight: 700;
+  font-feature-settings: "tnum";
+  text-shadow: 0 0 6px rgba(0, 208, 0, 0.55);
+}
+
+.classic-shade-title {
+  color: #e8e8e8;
+  font-size: 11px;
+}
+
+/* Panel de lista: dentro de la misma ventana, debajo del reproductor. */
+.classic-queue-panel {
+  background-color: #c0c0c0;
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  border-top: none;
+}
+
+/* Ventana de cola. */
+.classic-queue {
+  background-color: #000000;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  padding: 0;
+}
+
+.classic-queue row {
+  background-color: #000000;
+  padding: 2px 6px;
+}
+
+.classic-queue row:hover {
+  background-color: #0d1a0d;
+}
+
+.classic-queue row label {
+  color: #b8b8b8;
+  font-size: 11px;
+}
+
+.classic-queue row.classic-queue-current label {
+  color: #00d000;
+}
+
+.classic-queue row.classic-queue-current label.classic-queue-title {
+  font-weight: 700;
+}

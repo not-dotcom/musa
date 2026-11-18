@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use musa_protocol::{Lyrics, RepeatMode};
 use relm4::adw;
@@ -49,6 +49,14 @@ pub struct PlayerBar {
     heart_guard: Rc<Cell<bool>>,
     volume_guard: Rc<Cell<bool>>,
     progress_guard: Rc<Cell<bool>>,
+    /// Instante del último arrastre del usuario en la barra de progreso. Sirve
+    /// para que el ticker no devuelva el slider a la posición del motor a mitad
+    /// de arrastre.
+    seeking_at: Rc<Cell<Option<Instant>>>,
+    /// Posición pendiente de confirmar mientras el arrastre se asienta. Evita
+    /// enviar un `seek` por cada píxel de movimiento (lo que trababa el audio).
+    pending_seek: Rc<Cell<Option<u64>>>,
+    seek_source: Rc<RefCell<Option<gtk::glib::SourceId>>>,
 }
 
 impl PlayerBar {
@@ -242,6 +250,9 @@ impl PlayerBar {
             heart_guard: Rc::new(Cell::new(false)),
             volume_guard: Rc::new(Cell::new(false)),
             progress_guard: Rc::new(Cell::new(false)),
+            seeking_at: Rc::new(Cell::new(None)),
+            pending_seek: Rc::new(Cell::new(None)),
+            seek_source: Rc::new(RefCell::new(None)),
         };
         bar.connect(actions);
         bar.refresh(actions);
@@ -319,11 +330,29 @@ impl PlayerBar {
 
         let actions_seek = actions.clone();
         let guard = self.progress_guard.clone();
+        let seeking_at = self.seeking_at.clone();
+        let pending_seek = self.pending_seek.clone();
+        let seek_source = self.seek_source.clone();
         self.progress.connect_change_value(move |_scale, _, value| {
             if guard.get() {
                 return gtk::glib::Propagation::Stop;
             }
-            actions_seek.seek(value.max(0.0) as u64);
+            seeking_at.set(Some(Instant::now()));
+            pending_seek.set(Some(value.max(0.0) as u64));
+            if let Some(source) = seek_source.borrow_mut().take() {
+                source.remove();
+            }
+            let actions_seek = actions_seek.clone();
+            let pending_seek = pending_seek.clone();
+            let seek_source_inner = seek_source.clone();
+            let source = gtk::glib::timeout_add_local(Duration::from_millis(180), move || {
+                *seek_source_inner.borrow_mut() = None;
+                if let Some(position_ms) = pending_seek.take() {
+                    actions_seek.seek(position_ms);
+                }
+                gtk::glib::ControlFlow::Break
+            });
+            *seek_source.borrow_mut() = Some(source);
             gtk::glib::Propagation::Proceed
         });
 
@@ -506,6 +535,13 @@ impl PlayerBar {
     }
 
     fn set_progress(&self, position: u64, duration_ms: u64) {
+        let seeking = self
+            .seeking_at
+            .get()
+            .is_some_and(|at| at.elapsed().as_millis() < 1_200);
+        if seeking {
+            return;
+        }
         let position = if duration_ms > 0 {
             position.min(duration_ms)
         } else {

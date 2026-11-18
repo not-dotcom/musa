@@ -1,5 +1,6 @@
 //! Raíz de la interfaz: ventana, barra lateral, páginas y bucle de eventos.
 
+mod classic;
 mod detail;
 mod measure;
 mod pages;
@@ -40,6 +41,17 @@ pub struct AppInit {
 pub struct PlayerUi {
     pub state: PlayerState,
     pub synced_at: Instant,
+    /// Salto pedido por el usuario que el daemon todavía no ha confirmado.
+    /// Mientras exista, los eventos `player.changed` con la posición anterior
+    /// se ignoran: si no, la barra vuelve al punto de partida varias veces
+    /// hasta que el motor aplica el `seek`.
+    pending_seek: Option<PendingSeek>,
+}
+
+#[derive(Clone)]
+struct PendingSeek {
+    target_ms: u64,
+    at: Instant,
 }
 
 impl PlayerUi {
@@ -47,12 +59,45 @@ impl PlayerUi {
         Self {
             state,
             synced_at: Instant::now(),
+            pending_seek: None,
         }
     }
 
-    pub fn set(&mut self, state: PlayerState) {
+    pub fn set(&mut self, mut state: PlayerState) {
+        if let Some(pending) = self.pending_seek.clone() {
+            let elapsed = pending.at.elapsed();
+            let expected = if state.playing {
+                pending.target_ms.saturating_add(elapsed.as_millis() as u64)
+            } else {
+                pending.target_ms
+            };
+            let matched = state.position_ms.abs_diff(expected) < 1_500;
+            if !matched && elapsed.as_secs() < 3 {
+                // El motor sigue informando de la posición vieja: se mantiene
+                // el destino elegido y se interpola desde el momento del salto.
+                state.position_ms = pending.target_ms;
+                self.state = state;
+                self.synced_at = pending.at;
+                return;
+            }
+            self.pending_seek = None;
+        }
         self.state = state;
         self.synced_at = Instant::now();
+    }
+
+    /// Registra un salto del usuario y coloca la posición local en el destino.
+    pub fn begin_seek(&mut self, target_ms: u64) {
+        let target_ms = match &self.state.track {
+            Some(track) if track.duration_ms > 0 => target_ms.min(track.duration_ms),
+            _ => target_ms,
+        };
+        self.state.position_ms = target_ms;
+        self.synced_at = Instant::now();
+        self.pending_seek = Some(PendingSeek {
+            target_ms,
+            at: Instant::now(),
+        });
     }
 
     pub fn position_ms(&self) -> u64 {
@@ -95,6 +140,7 @@ pub struct Actions {
     /// Detalle de catálogo en curso (`album:<id>` / `artist:<id>`). Sirve para
     /// descartar respuestas que llegan después de cambiar de página.
     pub pending_detail: Rc<RefCell<Option<String>>>,
+    pub classic: Rc<RefCell<classic::ClassicState>>,
 }
 
 const PAGES: &[(&str, &str, &str)] = &[
@@ -355,18 +401,11 @@ impl Actions {
         // pánico («RefCell already borrowed») al mover la barra de progreso.
         let position_ms = {
             let mut player = self.player.borrow_mut();
-            match player.state.track.as_ref() {
-                Some(track) => {
-                    let position_ms = if track.duration_ms > 0 {
-                        position_ms.min(track.duration_ms)
-                    } else {
-                        position_ms
-                    };
-                    player.state.position_ms = position_ms;
-                    player.synced_at = Instant::now();
-                    position_ms
-                }
-                None => position_ms,
+            if player.state.track.is_some() {
+                player.begin_seek(position_ms);
+                player.state.position_ms
+            } else {
+                position_ms
             }
         };
         self.client.call(
@@ -703,6 +742,17 @@ impl SimpleComponent for AppModel {
                 actions.open_lyrics();
             });
         }
+        if let Some(mode) = std::env::var_os("MUSA_OPEN_CLASSIC") {
+            let actions = actions.clone();
+            gtk::glib::timeout_add_local_once(Duration::from_millis(1200), move || {
+                actions.toggle_classic();
+                match mode.to_string_lossy().as_ref() {
+                    "shade" => actions.classic_shade(),
+                    "queue" => actions.classic_show_queue(),
+                    _ => {}
+                }
+            });
+        }
         let _ = (&actions, &bar);
         ComponentParts {
             model: AppModel,
@@ -763,6 +813,7 @@ fn build_shell(
     let now_rows = Rc::new(RefCell::new(Vec::new()));
     let grid_syncers: Rc<RefCell<Vec<Rc<dyn Fn(i32)>>>> = Rc::new(RefCell::new(Vec::new()));
     let pending_detail = Rc::new(RefCell::new(None));
+    let classic = Rc::new(RefCell::new(classic::ClassicState::default()));
 
     let actions = Actions {
         client: client.clone(),
@@ -785,6 +836,7 @@ fn build_shell(
         now_rows,
         grid_syncers,
         pending_detail,
+        classic,
     };
 
     // Barra superior.
@@ -811,6 +863,31 @@ fn build_shell(
         }
     });
     header.pack_end(&search_button);
+
+    let classic_button = gtk::Button::new();
+    let classic_icon = gtk::Image::from_icon_name("musa-classic");
+    classic_icon.set_pixel_size(20);
+    classic_icon.add_css_class("stroke-icon");
+    classic_button.set_child(Some(&classic_icon));
+    classic_button.set_tooltip_text(Some("Minirreproductor Winamp (Ctrl+M)"));
+    classic_button.add_css_class("icon-button");
+    let actions_for_classic = actions.clone();
+    classic_button.connect_clicked(move |_| actions_for_classic.toggle_classic());
+    header.pack_end(&classic_button);
+
+    // Atajo Ctrl+M. `ShortcutController` va en la ventana, así que el atajo
+    // funciona sin depender de qué widget tenga el foco.
+    let actions_for_shortcut = actions.clone();
+    let shortcut = gtk::Shortcut::new(
+        gtk::ShortcutTrigger::parse_string("<Control>m"),
+        Some(gtk::CallbackAction::new(move |_, _| {
+            actions_for_shortcut.toggle_classic();
+            gtk::glib::Propagation::Stop
+        })),
+    );
+    let shortcuts = gtk::ShortcutController::new();
+    shortcuts.add_shortcut(shortcut);
+    window.add_controller(shortcuts);
 
     // Barra lateral.
     let sidebar = build_sidebar(&actions);
@@ -1011,6 +1088,7 @@ fn start_ticker(actions: &Actions, bar: &PlayerBar) {
             }
         }
         bar.refresh(&actions);
+        classic::refresh(&actions);
         actions.refresh_now_playing();
         if !actions.client.is_online() && !warned_offline {
             warned_offline = true;
@@ -1042,6 +1120,7 @@ fn install_icons() {
 
 fn install_css() {
     install_icons();
+    classic::install_css();
     let provider = gtk::CssProvider::new();
     provider.load_from_string(include_str!("style.css"));
     if let Some(display) = gtk::gdk::Display::default() {
@@ -1050,5 +1129,73 @@ fn install_css() {
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_at(position_ms: u64) -> PlayerState {
+        PlayerState {
+            queue: vec!["a".into()],
+            index: 0,
+            position_ms,
+            playing: true,
+            shuffle: false,
+            repeat: RepeatMode::Off,
+            volume: 50,
+            track: Some(Song {
+                id: "a".into(),
+                title: "t".into(),
+                artist_id: "ar".into(),
+                artist_name: "ar".into(),
+                album_id: "al".into(),
+                album_title: "al".into(),
+                track_number: 1,
+                disc_number: 1,
+                duration_ms: 300_000,
+                cover_path: String::new(),
+                favorite: false,
+                playable: true,
+                explicit: false,
+            }),
+            engine: "real".into(),
+        }
+    }
+
+    /// Un evento con la posición anterior no debe devolver la barra al origen
+    /// después de un salto: era el «vuelve a ese punto varias veces».
+    #[test]
+    fn stale_position_does_not_override_seek() {
+        let mut player = PlayerUi::new(state_at(10_000));
+        player.begin_seek(200_000);
+        assert_eq!(player.state.position_ms, 200_000);
+
+        player.set(state_at(10_400));
+        assert_eq!(player.state.position_ms, 200_000);
+
+        player.set(state_at(10_800));
+        assert_eq!(player.state.position_ms, 200_000);
+    }
+
+    /// Cuando el motor confirma el salto, el estado pasa a mandar otra vez.
+    #[test]
+    fn confirmed_seek_is_accepted() {
+        let mut player = PlayerUi::new(state_at(10_000));
+        player.begin_seek(200_000);
+        player.set(state_at(200_100));
+        assert_eq!(player.state.position_ms, 200_100);
+        assert!(player.pending_seek.is_none());
+    }
+
+    /// Un salto no confirmado en 3 s deja de bloquear los eventos.
+    #[test]
+    fn pending_seek_expires() {
+        let mut player = PlayerUi::new(state_at(10_000));
+        player.begin_seek(200_000);
+        player.pending_seek.as_mut().unwrap().at = Instant::now() - Duration::from_secs(4);
+        player.set(state_at(11_000));
+        assert_eq!(player.state.position_ms, 11_000);
     }
 }

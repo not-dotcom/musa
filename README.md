@@ -53,6 +53,7 @@ are handled in Apple's own window; Musa never asks for or stores your password.
 | **Albums to your library** | Add a whole catalog album with its songs. It is saved in Musa instantly and an attempt is made to mirror it in your Apple Music library. |
 | **Home and Listen Now** | Personal mix, new releases from your library and an editorial hub with mixes, favorites, playlists and artists. |
 | **Persistent player** | Artwork, title and artist, previous, play/pause, next, shuffle, repeat, progress, times and volume. It never goes away. |
+| **Classic mode** | A Winamp-style player with its own skin, LED clock, scrolling marquee, spectrum and playlist window. It replaces the main window while open (`Ctrl+M` or the mouse icon in the header) and has a button to go back. |
 | **Queue and lyrics** | View the queue and jump around in it; open Apple's lyrics in their own window with the current line highlighted and scrolled to the center. |
 | **Favorites** | Mark songs, albums, artists and playlists with a grey outline heart or a filled red one, with a toast and **Undo**. For now they are stored locally. |
 | **Details** | Large artwork, actions and track list. The artwork and header scroll with the list in a single scroll; «Back» stays pinned. |
@@ -167,6 +168,8 @@ Useful variables:
 | `MUSA_ELECTRON` | Path to the sidecar's castLabs/Widevine Electron. |
 | `MUSA_SIDECAR_JS` | Alternative path to `sidecar/main.js`. |
 | `MUSA_MEASURE_SECONDS` | Shortens measurements for development testing. |
+| `MUSA_OPEN_CLASSIC` | Opens the classic player on startup. `queue` also shows the playlist, `shade` collapses it. |
+| `MUSA_OPEN_LYRICS` | Opens the lyrics window on startup. |
 | `GSK_RENDERER` | `cairo`, `ngl` or `vulkan` to compare the render floor. |
 
 On-disk paths (nothing is ever written outside them):
@@ -191,6 +194,13 @@ On-disk paths (nothing is ever written outside them):
 | --- | --- | --- |
 | ![](docs/screenshots/detail-album.webp) | ![](docs/screenshots/detail-playlist.webp) | ![](docs/screenshots/detail-artist.webp) |
 
+**Classic mode** (`Ctrl+M`, or the mouse icon in the header): Winamp-style
+player with its playlist stacked underneath. The spectrum is decorative: the
+audio is decrypted inside Chromium's EME pipeline, so there is no spectrum data
+and a real equalizer is not possible.
+
+![](docs/screenshots/classic.webp)
+
 ## Status
 
 Musa is a **working MVP**: Apple Music sign-in, the library, search and real
@@ -204,6 +214,7 @@ playback all work. What is missing is mostly syncing and desktop controls.
 | Favorites | **Local** (no Apple sync) |
 | Followed artists | **Local** (best-effort Apple sync) |
 | Added albums | **Local** (best-effort Apple sync) |
+| Classic mode | **Works** (spectrum is decorative) |
 | Lyrics | **Depends on web token permissions** |
 | MPRIS and media controls | **Pending** |
 | Queue restore across sessions | **In design** |
